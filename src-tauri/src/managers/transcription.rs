@@ -684,13 +684,24 @@ impl TranscriptionManager {
 
         // Apply word correction if custom words are configured.
         // Skip for Whisper models since custom words are already passed as initial_prompt.
-        let is_whisper = self
-            .model_manager
-            .get_model_info(&settings.selected_model)
+        let model_info = self.model_manager.get_model_info(&settings.selected_model);
+
+        let is_whisper = model_info
+            .as_ref()
             .map(|info| matches!(info.engine_type, EngineType::Whisper))
             .unwrap_or(false);
 
-        let corrected_result = if !settings.custom_words.is_empty() && !is_whisper {
+        let should_trim_trailing_dot = model_info
+            .as_ref()
+            .map(|info| {
+                matches!(
+                    info.engine_type,
+                    EngineType::GigaAM | EngineType::Parakeet
+                )
+            })
+            .unwrap_or(false);
+
+        let mut corrected_result = if !settings.custom_words.is_empty() && !is_whisper {
             apply_custom_words(
                 &result.text,
                 &settings.custom_words,
@@ -699,6 +710,13 @@ impl TranscriptionManager {
         } else {
             result.text
         };
+
+        // Some models (like GigaAM and Parakeet) usually append a trailing dot to all transcriptions.
+        // We trim it for short messages (4 words or fewer) to improve usability for voice typing,
+        // while preserving it for longer sentences.
+        if should_trim_trailing_dot {
+            trim_short_sentence_dot(&mut corrected_result, 4);
+        }
 
         // Filter out filler words and hallucinations
         let filtered_result = filter_transcription_output(
@@ -850,5 +868,73 @@ impl Drop for TranscriptionManager {
                 debug!("Idle watcher thread joined successfully");
             }
         }
+    }
+}
+
+/// Удаляет точку в конце коротких фраз (до `max_words` слов включительно),
+/// если в них отсутствует сложная внутренняя пунктуация.
+///
+/// Эвристика разработана для ASR-моделей (GigaAM, Parakeet), склонных
+/// автоматически добавлять точку в конце любого распознанного фрагмента.
+fn trim_short_sentence_dot(text: &mut String, max_words: usize) {
+    let trimmed = text.trim_end();
+    if trimmed.ends_with('.') {
+        // Безопасно отбрасываем финальную точку для анализа внутренней пунктуации
+        let mut chars = trimmed.chars();
+        chars.next_back(); // удаляет '.'
+
+        // Если во фразе есть запятые или другие сложные знаки, сохраняем точку
+        let has_internal_punctuation = chars.clone().any(|c| {
+            matches!(c, ',' | ';' | ':' | '—' | '-')
+        });
+
+        if !has_internal_punctuation {
+            // Оптимизированный подсчет слов с ограничением в O(1) шагов
+            let word_count = trimmed.split_whitespace().take(max_words + 1).count();
+            if word_count <= max_words {
+                // Вычисляем длину без точки. '.' гарантированно занимает 1 байт в UTF-8.
+                // Данный срез также автоматически отсекает все концевые пробелы.
+                let bytes_to_keep = trimmed.len() - 1;
+                text.truncate(bytes_to_keep);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_trim_short_sentence_dot() {
+        // Простые короткие фразы
+        let mut s = "Привет.".to_string();
+        trim_short_sentence_dot(&mut s, 4);
+        assert_eq!(s, "Привет");
+
+        // Обработка концевых пробелов
+        let mut s = "Привет.   ".to_string();
+        trim_short_sentence_dot(&mut s, 4);
+        assert_eq!(s, "Привет");
+
+        // Максимальная длина короткого сообщения (4 слова)
+        let mut s = "Это очень короткое предложение.".to_string();
+        trim_short_sentence_dot(&mut s, 4);
+        assert_eq!(s, "Это очень короткое предложение");
+
+        // Превышение лимита слов (5 слов) -> точка сохраняется
+        let mut s = "Это предложение состоит из пяти слов.".to_string();
+        trim_short_sentence_dot(&mut s, 4);
+        assert_eq!(s, "Это предложение состоит из пяти слов.");
+
+        // Сложная пунктуация -> точка сохраняется для сохранения структуры
+        let mut s = "Да, конечно.".to_string();
+        trim_short_sentence_dot(&mut s, 4);
+        assert_eq!(s, "Да, конечно.");
+
+        // Восклицательный знак -> никогда не удаляется
+        let mut s = "Привет!".to_string();
+        trim_short_sentence_dot(&mut s, 4);
+        assert_eq!(s, "Привет!");
     }
 }
