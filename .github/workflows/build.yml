@@ -357,7 +357,7 @@ jobs:
           Write-Host "TAURI_WINDOWS_SIGNTOOL_PATH=$($signtool.FullName)"
           Add-Content -Path $env:GITHUB_ENV -Value "TAURI_WINDOWS_SIGNTOOL_PATH=$($signtool.FullName)"
 
-      - name: Disable custom signing for unsigned Windows builds
+      - name: Disable signing for unsigned Windows builds
         if: contains(inputs.platform, 'windows') && !inputs.sign-binaries
         shell: pwsh
         run: |
@@ -365,6 +365,7 @@ jobs:
           $configPath = 'src-tauri/tauri.conf.json'
           $config = Get-Content -Raw $configPath | ConvertFrom-Json
           $config.bundle.windows.PSObject.Properties.Remove('signCommand')
+          $config.bundle.createUpdaterArtifacts = $false
           $config | ConvertTo-Json -Depth 100 | Set-Content -Encoding utf8 $configPath
 
       - name: Install ONNX Runtime (x86_64 macOS)
