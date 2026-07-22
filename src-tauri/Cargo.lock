@@ -2447,11 +2447,12 @@ dependencies = [
 
 [[package]]
 name = "handy"
-version = "0.9.4"
+version = "0.9.5-clipboardfix.1"
 dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "clipboard-win",
  "cpal",
  "enigo",
  "env_filter",
@@ -2463,6 +2464,7 @@ dependencies = [
  "handy-keys",
  "hf-hub",
  "hound",
+ "image",
  "log",
  "natural",
  "once_cell",
