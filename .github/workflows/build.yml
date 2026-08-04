@@ -497,8 +497,9 @@ jobs:
           $configPath = "src-tauri/tauri.conf.json"
           $config = Get-Content $configPath -Raw | ConvertFrom-Json -Depth 100
           $config.bundle.windows.PSObject.Properties.Remove("signCommand")
+          $config.bundle.createUpdaterArtifacts = $false
           $config | ConvertTo-Json -Depth 100 | Set-Content $configPath -Encoding utf8
-          Write-Host "Removed bundle.windows.signCommand for unsigned Windows build"
+          Write-Host "Disabled Windows signing and updater artifacts for unsigned Windows build"
 
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
