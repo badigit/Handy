@@ -1,0 +1,30 @@
+name: "Codex Windows Test Build"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag, or SHA to build"
+        required: true
+        default: "codex/clipboard-pr-clean"
+        type: string
+      asset-prefix:
+        description: "Artifact name prefix"
+        required: true
+        default: "handy-codex"
+        type: string
+
+jobs:
+  windows-x64:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build.yml
+    with:
+      platform: "windows-latest"
+      target: "x86_64-pc-windows-msvc"
+      build-args: ""
+      upload-artifacts: true
+      sign-binaries: false
+      asset-prefix: ${{ inputs.asset-prefix }}
+      ref: ${{ inputs.ref }}
+    secrets: inherit
