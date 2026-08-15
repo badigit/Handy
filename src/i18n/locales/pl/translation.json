@@ -165,7 +165,9 @@
       "deleteActiveConfirm": "{{modelName}} jest Twoim aktywnym modelem. Usunięcie go zatrzyma transkrypcje, dopóki nie wybierzesz nowego modelu. Czy na pewno chcesz kontynuować?",
       "deleteTitle": "Usuń model",
       "filters": {
-        "allLanguages": "Wszystkie języki"
+        "allLanguages": "Wszystkie języki",
+        "streaming": "Filtruj modele obsługujące transkrypcję na żywo",
+        "translation": "Filtruj modele obsługujące tłumaczenie na język angielski"
       },
       "noModelsMatch": "Żadne modele nie pasują do tego filtra.",
       "yourModels": "Pobrane modele",
@@ -224,6 +226,12 @@
         "description": "Wybierz preferowane urządzenie mikrofonowe",
         "placeholder": "Wybierz mikrofon...",
         "loading": "Wczytywanie..."
+      },
+      "channel": {
+        "title": "Kanał wejściowy",
+        "description": "Wybierz kanał wejściowy, z którego chcesz nagrywać. Użyj tej opcji, jeśli interfejs audio ma wiele wejść.",
+        "average": "Uśrednij wszystkie kanały",
+        "channel": "Kanał {{n}}"
       },
       "audioFeedback": {
         "label": "Informacja dźwiękowa",
@@ -368,6 +376,10 @@
       "voiceActivityDetection": {
         "title": "Wykrywanie aktywności głosowej",
         "description": "Odfiltrowuje ciszę z nagrań. Modele obsługujące streaming używają dłuższego marginesu VAD; wyłączenie VAD nagrywa surowy dźwięk."
+      },
+      "fillerWordRemoval": {
+        "title": "Usuń wyrazy wypełniające",
+        "description": "Usuwa typowe słowa wyrażające wahanie z transkrypcji. Wyłącz, aby je zachować."
       }
     },
     "postProcessing": {

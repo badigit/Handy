@@ -165,7 +165,9 @@
       "deleteActiveConfirm": "{{modelName}} è il tuo modello attivo. Eliminarlo interromperà le trascrizioni fino a quando non selezionerai un nuovo modello. Sei sicuro?",
       "deleteTitle": "Elimina modello",
       "filters": {
-        "allLanguages": "Tutte le lingue"
+        "allLanguages": "Tutte le lingue",
+        "streaming": "Filtra i modelli che supportano la trascrizione in tempo reale",
+        "translation": "Filtra i modelli che supportano la traduzione in inglese"
       },
       "noModelsMatch": "Nessun modello corrisponde a questo filtro.",
       "yourModels": "Modelli scaricati",
@@ -224,6 +226,12 @@
         "description": "Scegli il microfono preferito",
         "placeholder": "Scegli microfono...",
         "loading": "Caricamento..."
+      },
+      "channel": {
+        "title": "Canale di ingresso",
+        "description": "Seleziona il canale di ingresso da cui registrare. Usa questa opzione se l'interfaccia audio dispone di più ingressi.",
+        "average": "Media di tutti i canali",
+        "channel": "Canale {{n}}"
       },
       "audioFeedback": {
         "label": "Feedback Audio",
@@ -368,6 +376,10 @@
       "voiceActivityDetection": {
         "title": "Rilevamento dell'attività vocale",
         "description": "Filtra il silenzio dalle registrazioni. I modelli che supportano lo streaming utilizzano una coda VAD più lunga; disabilitando la VAD si registra l'audio grezzo."
+      },
+      "fillerWordRemoval": {
+        "title": "Rimuovi le parole riempitive",
+        "description": "Rimuove le parole di esitazione più comuni dalle trascrizioni. Disattiva per mantenerle."
       }
     },
     "postProcessing": {
