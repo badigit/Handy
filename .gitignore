@@ -45,3 +45,6 @@ result
 
 # Python bytecode (scripts/)
 __pycache__/
+
+# Собранные артефакты релизов и проб — машинный вывод сборки.
+/artifacts/
