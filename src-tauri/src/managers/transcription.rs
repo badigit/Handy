@@ -1205,7 +1205,7 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
     }
 
     pub fn transcribe_cloud(&self, settings: &AppSettings, audio: &[f32]) -> Result<String> {
-        let wav_bytes = samples_to_wav_bytes(audio)?;
+        let wav_bytes = Self::samples_to_wav_bytes(audio)?;
         let base_url = settings.cloud_transcribe_base_url.trim().trim_end_matches('/');
         let url = if base_url.ends_with("/audio/transcriptions") {
             base_url.to_string()
@@ -1316,7 +1316,7 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
         if settings.cloud_transcribe_enabled && !settings.cloud_transcribe_base_url.trim().is_empty() {
             let raw_result = self.transcribe_cloud(&settings, &audio)?;
             let output_language = if settings.selected_language != "auto" {
-                OutputLanguageEvidence::Configured(settings.selected_language.clone())
+                OutputLanguageEvidence::UserSelected(settings.selected_language.clone())
             } else {
                 OutputLanguageEvidence::Unknown
             };
