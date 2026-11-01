@@ -1172,12 +1172,120 @@ impl TranscriptionManager {
         .emit(&self.app_handle);
     }
 
+fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut cursor = std::io::Cursor::new(Vec::new());
+    {
+        let mut writer = hound::WavWriter::new(&mut cursor, spec)
+            .map_err(|e| anyhow::anyhow!("Failed to initialize WAV writer: {}", e))?;
+        for &sample in samples {
+            let sample_i16 = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+            writer
+                .write_sample(sample_i16)
+                .map_err(|e| anyhow::anyhow!("Failed to write WAV sample: {}", e))?;
+        }
+        writer
+            .finalize()
+            .map_err(|e| anyhow::anyhow!("Failed to finalize WAV: {}", e))?;
+    }
+    Ok(cursor.into_inner())
+}
+
     fn emit_stream_text(&self, committed: &str, tentative: &str) {
         let _ = StreamTextEvent {
             committed: committed.to_string(),
             tentative: tentative.to_string(),
         }
         .emit(&self.app_handle);
+    }
+
+    pub fn transcribe_cloud(&self, settings: &AppSettings, audio: &[f32]) -> Result<String> {
+        let wav_bytes = samples_to_wav_bytes(audio)?;
+        let base_url = settings.cloud_transcribe_base_url.trim().trim_end_matches('/');
+        let url = if base_url.ends_with("/audio/transcriptions") {
+            base_url.to_string()
+        } else if base_url.ends_with("/v1") {
+            format!("{}/audio/transcriptions", base_url)
+        } else {
+            format!("{}/v1/audio/transcriptions", base_url)
+        };
+
+        let model = if settings.cloud_transcribe_model.trim().is_empty() {
+            "whisper-1".to_string()
+        } else {
+            settings.cloud_transcribe_model.trim().to_string()
+        };
+
+        let language = if settings.selected_language != "auto" && !settings.selected_language.trim().is_empty() {
+            Some(settings.selected_language.trim().to_string())
+        } else {
+            None
+        };
+
+        let api_key = settings.cloud_transcribe_api_key.trim();
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(90))
+            .build()
+            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client for cloud transcription: {}", e))?;
+
+        let mut form = reqwest::blocking::multipart::Form::new()
+            .part(
+                "file",
+                reqwest::blocking::multipart::Part::bytes(wav_bytes)
+                    .file_name("audio.wav")
+                    .mime_str("audio/wav")
+                    .map_err(|e| anyhow::anyhow!("Failed to set multipart MIME: {}", e))?,
+            )
+            .text("model", model);
+
+        if let Some(lang) = language {
+            form = form.text("language", lang);
+        }
+
+        let mut request = client.post(&url);
+        if !api_key.is_empty() {
+            request = request
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("X-Api-Key", api_key);
+        }
+        request = request.multipart(form);
+
+        let response = request
+            .send()
+            .map_err(|e| anyhow::anyhow!("Cloud transcription request to '{}' failed: {}", url, e))?;
+
+        let status = response.status();
+        let body_text = response
+            .text()
+            .map_err(|e| anyhow::anyhow!("Failed to read cloud transcription response body: {}", e))?;
+
+        if !status.is_success() {
+            return Err(anyhow::anyhow!(
+                "Cloud transcription error (HTTP {}): {}",
+                status,
+                body_text
+            ));
+        }
+
+        #[derive(Deserialize)]
+        struct OpenAiTranscriptionResponse {
+            text: Option<String>,
+            transcription: Option<String>,
+        }
+
+        if let Ok(parsed) = serde_json::from_str::<OpenAiTranscriptionResponse>(&body_text) {
+            if let Some(t) = parsed.text.or(parsed.transcription) {
+                return Ok(t);
+            }
+        }
+
+        Ok(body_text.trim().to_string())
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
@@ -1200,6 +1308,42 @@ impl TranscriptionManager {
             debug!("Empty audio vector");
             self.maybe_unload_immediately("empty audio");
             return Ok(String::new());
+        }
+
+        // Get current settings for configuration
+        let settings = get_settings(&self.app_handle);
+
+        if settings.cloud_transcribe_enabled && !settings.cloud_transcribe_base_url.trim().is_empty() {
+            let raw_result = self.transcribe_cloud(&settings, &audio)?;
+            let output_language = if settings.selected_language != "auto" {
+                OutputLanguageEvidence::Configured(settings.selected_language.clone())
+            } else {
+                OutputLanguageEvidence::Unknown
+            };
+            let filtered_result = post_process_transcription_text(
+                raw_result,
+                &settings,
+                false,
+                &output_language,
+                &[],
+            );
+            let et = std::time::Instant::now();
+            let elapsed_secs = (et - st).as_secs_f64();
+            let audio_secs = audio_len as f64 / 16_000.0;
+            let speedup = real_time_factor(audio_secs, elapsed_secs);
+            info!(
+                "Cloud transcription completed in {:.2}s for {:.2}s of audio ({:.2}x real-time)",
+                elapsed_secs, audio_secs, speedup
+            );
+            if filtered_result.is_empty() {
+                info!("Cloud transcription result is empty");
+            } else {
+                info!(
+                    "Cloud transcription result: {}",
+                    crate::utils::redact_text(&filtered_result)
+                );
+            }
+            return Ok(filtered_result);
         }
 
         // Check if model is loaded, if not try to load it

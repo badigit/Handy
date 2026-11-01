@@ -478,6 +478,14 @@ pub struct AppSettings {
     #[serde(default = "default_theme")]
     pub theme: Theme,
     #[serde(default)]
+    pub cloud_transcribe_enabled: bool,
+    #[serde(default = "default_cloud_transcribe_base_url")]
+    pub cloud_transcribe_base_url: String,
+    #[serde(default)]
+    pub cloud_transcribe_api_key: String,
+    #[serde(default = "default_cloud_transcribe_model")]
+    pub cloud_transcribe_model: String,
+    #[serde(default)]
     pub experimental_enabled: bool,
     #[serde(default)]
     pub lazy_stream_close: bool,
@@ -591,6 +599,14 @@ fn default_overlay_style() -> OverlayStyle {
     return OverlayStyle::None;
     #[cfg(not(target_os = "linux"))]
     return OverlayStyle::Live;
+}
+
+fn default_cloud_transcribe_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
+}
+
+fn default_cloud_transcribe_model() -> String {
+    "whisper-1".to_string()
 }
 
 fn default_vad_enabled() -> bool {

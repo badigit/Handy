@@ -91,6 +91,14 @@ const settingUpdaters: {
     commands.changeAudioFeedbackVolumeSetting(value as number),
   sound_theme: (value) => commands.changeSoundThemeSetting(value as string),
   start_hidden: (value) => commands.changeStartHiddenSetting(value as boolean),
+  cloud_transcribe_enabled: (value) =>
+    commands.changeCloudTranscribeEnabledSetting(value as boolean),
+  cloud_transcribe_base_url: (value) =>
+    commands.changeCloudTranscribeBaseUrlSetting(value as string),
+  cloud_transcribe_api_key: (value) =>
+    commands.changeCloudTranscribeApiKeySetting(value as string),
+  cloud_transcribe_model: (value) =>
+    commands.changeCloudTranscribeModelSetting(value as string),
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   update_checks_enabled: (value) =>
