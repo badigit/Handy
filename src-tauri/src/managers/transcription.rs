@@ -1230,62 +1230,123 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
         let api_key = settings.cloud_transcribe_api_key.trim();
 
         let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(90))
+            .timeout(Duration::from_secs(35))
+            .connect_timeout(Duration::from_secs(10))
             .build()
             .map_err(|e| anyhow::anyhow!("Failed to build HTTP client for cloud transcription: {}", e))?;
 
-        let mut form = reqwest::blocking::multipart::Form::new()
-            .part(
-                "file",
-                reqwest::blocking::multipart::Part::bytes(wav_bytes)
-                    .file_name("audio.wav")
-                    .mime_str("audio/wav")
-                    .map_err(|e| anyhow::anyhow!("Failed to set multipart MIME: {}", e))?,
-            )
-            .text("model", model);
+        const MAX_RETRIES: usize = 3;
+        let mut last_error = String::new();
 
-        if let Some(lang) = language {
-            form = form.text("language", lang);
-        }
-
-        let mut request = client.post(&url);
-        if !api_key.is_empty() {
-            request = request
-                .header("Authorization", format!("Bearer {}", api_key))
-                .header("X-Api-Key", api_key);
-        }
-        request = request.multipart(form);
-
-        let response = request
-            .send()
-            .map_err(|e| anyhow::anyhow!("Cloud transcription request to '{}' failed: {}", url, e))?;
-
-        let status = response.status();
-        let body_text = response
-            .text()
-            .map_err(|e| anyhow::anyhow!("Failed to read cloud transcription response body: {}", e))?;
-
-        if !status.is_success() {
-            return Err(anyhow::anyhow!(
-                "Cloud transcription error (HTTP {}): {}",
-                status,
-                body_text
-            ));
-        }
-
-        #[derive(Deserialize)]
-        struct OpenAiTranscriptionResponse {
-            text: Option<String>,
-            transcription: Option<String>,
-        }
-
-        if let Ok(parsed) = serde_json::from_str::<OpenAiTranscriptionResponse>(&body_text) {
-            if let Some(t) = parsed.text.or(parsed.transcription) {
-                return Ok(t);
+        for attempt in 1..=MAX_RETRIES {
+            if attempt > 1 {
+                info!(
+                    "Retrying cloud transcription (attempt {}/{}) to '{}'...",
+                    attempt, MAX_RETRIES, url
+                );
             }
+
+            let mut form = reqwest::blocking::multipart::Form::new()
+                .part(
+                    "file",
+                    reqwest::blocking::multipart::Part::bytes(wav_bytes.clone())
+                        .file_name("audio.wav")
+                        .mime_str("audio/wav")
+                        .map_err(|e| anyhow::anyhow!("Failed to set multipart MIME: {}", e))?,
+                )
+                .text("model", model.clone());
+
+            if let Some(ref lang) = language {
+                form = form.text("language", lang.clone());
+            }
+
+            let mut request = client.post(&url);
+            if !api_key.is_empty() {
+                request = request
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("X-Api-Key", api_key);
+            }
+            request = request.multipart(form);
+
+            let response = match request.send() {
+                Ok(resp) => resp,
+                Err(e) => {
+                    last_error = format!("Network error: {}", e);
+                    warn!(
+                        "Cloud transcription attempt {}/{} network error: {}",
+                        attempt, MAX_RETRIES, e
+                    );
+                    if attempt < MAX_RETRIES {
+                        let delay = Duration::from_millis(500 * attempt as u64);
+                        thread::sleep(delay);
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            };
+
+            let status = response.status();
+            let body_text = match response.text() {
+                Ok(text) => text,
+                Err(e) => {
+                    last_error = format!("Failed to read response body: {}", e);
+                    warn!(
+                        "Cloud transcription attempt {}/{} body read error: {}",
+                        attempt, MAX_RETRIES, e
+                    );
+                    if attempt < MAX_RETRIES {
+                        let delay = Duration::from_millis(500 * attempt as u64);
+                        thread::sleep(delay);
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            };
+
+            if !status.is_success() {
+                let status_code = status.as_u16();
+                last_error = format!("HTTP {}: {}", status_code, body_text);
+                warn!(
+                    "Cloud transcription attempt {}/{} returned HTTP {}: {}",
+                    attempt, MAX_RETRIES, status_code, body_text
+                );
+
+                // Retry on server errors (5xx) or rate limits (429)
+                if (status_code >= 500 || status_code == 429) && attempt < MAX_RETRIES {
+                    let delay = Duration::from_millis(600 * attempt as u64);
+                    thread::sleep(delay);
+                    continue;
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Cloud transcription failed (HTTP {}): {}",
+                        status_code,
+                        body_text
+                    ));
+                }
+            }
+
+            #[derive(Deserialize)]
+            struct OpenAiTranscriptionResponse {
+                text: Option<String>,
+                transcription: Option<String>,
+            }
+
+            if let Ok(parsed) = serde_json::from_str::<OpenAiTranscriptionResponse>(&body_text) {
+                if let Some(t) = parsed.text.or(parsed.transcription) {
+                    return Ok(t);
+                }
+            }
+
+            return Ok(body_text.trim().to_string());
         }
 
-        Ok(body_text.trim().to_string())
+        Err(anyhow::anyhow!(
+            "Cloud transcription failed after {} attempts: {}",
+            MAX_RETRIES,
+            last_error
+        ))
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
@@ -1314,36 +1375,77 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
         let settings = get_settings(&self.app_handle);
 
         if settings.cloud_transcribe_enabled && !settings.cloud_transcribe_base_url.trim().is_empty() {
-            let raw_result = self.transcribe_cloud(&settings, &audio)?;
-            let output_language = if settings.selected_language != "auto" {
-                OutputLanguageEvidence::UserSelected(settings.selected_language.clone())
-            } else {
-                OutputLanguageEvidence::Unknown
-            };
-            let filtered_result = post_process_transcription_text(
-                raw_result,
-                &settings,
-                false,
-                &output_language,
-                &[],
-            );
-            let et = std::time::Instant::now();
-            let elapsed_secs = (et - st).as_secs_f64();
-            let audio_secs = audio_len as f64 / 16_000.0;
-            let speedup = real_time_factor(audio_secs, elapsed_secs);
-            info!(
-                "Cloud transcription completed in {:.2}s for {:.2}s of audio ({:.2}x real-time)",
-                elapsed_secs, audio_secs, speedup
-            );
-            if filtered_result.is_empty() {
-                info!("Cloud transcription result is empty");
-            } else {
-                info!(
-                    "Cloud transcription result: {}",
-                    crate::utils::redact_text(&filtered_result)
-                );
+            match self.transcribe_cloud(&settings, &audio) {
+                Ok(raw_result) => {
+                    let output_language = if settings.selected_language != "auto" {
+                        OutputLanguageEvidence::UserSelected(settings.selected_language.clone())
+                    } else {
+                        OutputLanguageEvidence::Unknown
+                    };
+                    let filtered_result = post_process_transcription_text(
+                        raw_result,
+                        &settings,
+                        false,
+                        &output_language,
+                        &[],
+                    );
+                    let et = std::time::Instant::now();
+                    let elapsed_secs = (et - st).as_secs_f64();
+                    let audio_secs = audio_len as f64 / 16_000.0;
+                    let speedup = real_time_factor(audio_secs, elapsed_secs);
+                    info!(
+                        "Cloud transcription completed in {:.2}s for {:.2}s of audio ({:.2}x real-time)",
+                        elapsed_secs, audio_secs, speedup
+                    );
+                    if filtered_result.is_empty() {
+                        info!("Cloud transcription result is empty");
+                    } else {
+                        info!(
+                            "Cloud transcription result: {}",
+                            crate::utils::redact_text(&filtered_result)
+                        );
+                    }
+                    return Ok(filtered_result);
+                }
+                Err(cloud_err) => {
+                    warn!(
+                        "Cloud transcription failed: {}. Checking local fallback model...",
+                        cloud_err
+                    );
+
+                    let fallback_model = settings.selected_model.clone();
+                    let local_model_available = self.is_model_loaded()
+                        || (!fallback_model.is_empty()
+                            && self
+                                .model_manager
+                                .get_model_path(&fallback_model)
+                                .is_ok());
+
+                    if local_model_available {
+                        warn!(
+                            "Falling back to local model '{}' after cloud transcription failure",
+                            fallback_model
+                        );
+                        if !self.is_model_loaded() && !fallback_model.is_empty() {
+                            info!("Auto-loading fallback local model '{}'...", fallback_model);
+                            if let Err(e) = self.load_model(&fallback_model) {
+                                error!(
+                                    "Failed to load fallback local model '{}': {}",
+                                    fallback_model, e
+                                );
+                                return Err(cloud_err);
+                            }
+                        }
+                        // Fall through to local model transcription below!
+                    } else {
+                        error!(
+                            "Cloud transcription failed and no local fallback model is available: {}",
+                            cloud_err
+                        );
+                        return Err(cloud_err);
+                    }
+                }
             }
-            return Ok(filtered_result);
         }
 
         // Check if model is loaded, if not try to load it
