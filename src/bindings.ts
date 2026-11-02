@@ -109,6 +109,30 @@ async changeCloudTranscribeModelSetting(model: string) : Promise<Result<null, st
     else return { status: "error", error: e  as any };
 }
 },
+async changeCloudTranscribeParallelSetting(parallel: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cloud_transcribe_parallel_setting", { parallel }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeCloudTranscribeSelectedProviderSetting(providerId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_cloud_transcribe_selected_provider_setting", { providerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async saveCloudTranscribeProvidersSetting(providers: CloudTranscribeProvider[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_cloud_transcribe_providers_setting", { providers }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAutostartSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_autostart_setting", { enabled }) };
@@ -1049,7 +1073,8 @@ vad_backend?: VadBackend;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle; cloud_transcribe_enabled?: boolean; cloud_transcribe_base_url?: string; cloud_transcribe_api_key?: string; cloud_transcribe_model?: string }
+overlay_style?: OverlayStyle; cloud_transcribe_enabled?: boolean; cloud_transcribe_base_url?: string; cloud_transcribe_api_key?: string; cloud_transcribe_model?: string; cloud_transcribe_providers?: CloudTranscribeProvider[]; cloud_transcribe_selected_provider_id?: string; cloud_transcribe_parallel?: boolean }
+export type CloudTranscribeProvider = { id: string; label: string; base_url: string; api_key: string; model: string; enabled: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }

@@ -5,6 +5,7 @@ import type {
   AppSettings as Settings,
   AudioDevice,
   ChineseScript,
+  CloudTranscribeProvider,
   TranscribeAcceleratorSetting,
   OrtAcceleratorSetting,
   ShortcutActivation,
@@ -99,6 +100,12 @@ const settingUpdaters: {
     commands.changeCloudTranscribeApiKeySetting(value as string),
   cloud_transcribe_model: (value) =>
     commands.changeCloudTranscribeModelSetting(value as string),
+  cloud_transcribe_parallel: (value) =>
+    commands.changeCloudTranscribeParallelSetting(value as boolean),
+  cloud_transcribe_selected_provider_id: (value) =>
+    commands.changeCloudTranscribeSelectedProviderSetting(value as string),
+  cloud_transcribe_providers: (value) =>
+    commands.saveCloudTranscribeProvidersSetting(value as CloudTranscribeProvider[]),
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   update_checks_enabled: (value) =>

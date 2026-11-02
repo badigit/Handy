@@ -22,9 +22,10 @@ use tauri::{AppHandle, Emitter, Manager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ChineseScript, ClipboardHandling, KeyboardImplementation,
-    LLMPrompt, OverlayPosition, OverlayStyle, PasteMethod, ShortcutActivation, ShortcutBinding,
-    SoundTheme, Theme, TypingTool, VadBackend, APPLE_INTELLIGENCE_PROVIDER_ID,
+    self, get_settings, AutoSubmitKey, ChineseScript, ClipboardHandling, CloudTranscribeProvider,
+    KeyboardImplementation, LLMPrompt, OverlayPosition, OverlayStyle, PasteMethod,
+    ShortcutActivation, ShortcutBinding, SoundTheme, Theme, TypingTool, VadBackend,
+    APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
 
@@ -866,6 +867,94 @@ pub fn change_cloud_transcribe_model_setting(
         serde_json::json!({
             "setting": "cloud_transcribe_model",
             "value": model
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cloud_transcribe_parallel_setting(
+    app: AppHandle,
+    parallel: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_parallel = parallel;
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_parallel",
+            "value": parallel
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cloud_transcribe_selected_provider_setting(
+    app: AppHandle,
+    provider_id: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_selected_provider_id = provider_id.clone();
+
+    // Sync active provider fields with legacy fields for compatibility
+    if let Some(active) = settings
+        .cloud_transcribe_providers
+        .iter()
+        .find(|p| p.id == provider_id)
+    {
+        settings.cloud_transcribe_base_url = active.base_url.clone();
+        settings.cloud_transcribe_api_key = active.api_key.clone();
+        settings.cloud_transcribe_model = active.model.clone();
+    }
+
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_selected_provider_id",
+            "value": provider_id
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn save_cloud_transcribe_providers_setting(
+    app: AppHandle,
+    providers: Vec<CloudTranscribeProvider>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_providers = providers.clone();
+
+    // Sync active provider fields with legacy fields
+    let selected_id = settings.cloud_transcribe_selected_provider_id.clone();
+    if let Some(active) = settings
+        .cloud_transcribe_providers
+        .iter()
+        .find(|p| p.id == selected_id)
+    {
+        settings.cloud_transcribe_base_url = active.base_url.clone();
+        settings.cloud_transcribe_api_key = active.api_key.clone();
+        settings.cloud_transcribe_model = active.model.clone();
+    }
+
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_providers",
+            "value": providers
         }),
     );
 

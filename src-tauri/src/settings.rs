@@ -107,6 +107,17 @@ pub struct PostProcessProvider {
     pub supports_structured_output: bool,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Type, PartialEq)]
+pub struct CloudTranscribeProvider {
+    pub id: String,
+    pub label: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    #[serde(default)]
+    pub enabled: bool,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum OverlayPosition {
@@ -485,6 +496,12 @@ pub struct AppSettings {
     pub cloud_transcribe_api_key: String,
     #[serde(default = "default_cloud_transcribe_model")]
     pub cloud_transcribe_model: String,
+    #[serde(default = "default_cloud_transcribe_providers")]
+    pub cloud_transcribe_providers: Vec<CloudTranscribeProvider>,
+    #[serde(default = "default_cloud_transcribe_selected_provider_id")]
+    pub cloud_transcribe_selected_provider_id: String,
+    #[serde(default = "default_cloud_transcribe_parallel")]
+    pub cloud_transcribe_parallel: bool,
     #[serde(default)]
     pub experimental_enabled: bool,
     #[serde(default)]
@@ -607,6 +624,43 @@ fn default_cloud_transcribe_base_url() -> String {
 
 fn default_cloud_transcribe_model() -> String {
     "whisper-1".to_string()
+}
+
+fn default_cloud_transcribe_selected_provider_id() -> String {
+    "bitrix".to_string()
+}
+
+fn default_cloud_transcribe_parallel() -> bool {
+    false
+}
+
+fn default_cloud_transcribe_providers() -> Vec<CloudTranscribeProvider> {
+    vec![
+        CloudTranscribeProvider {
+            id: "bitrix".to_string(),
+            label: "Bitrix24 (VibeCode)".to_string(),
+            base_url: "https://vibecode.bitrix24.tech/v1".to_string(),
+            api_key: "".to_string(),
+            model: "bitrix/deepdml/faster-whisper-large-v3-turbo-ct2".to_string(),
+            enabled: true,
+        },
+        CloudTranscribeProvider {
+            id: "groq".to_string(),
+            label: "Groq Cloud".to_string(),
+            base_url: "https://api.groq.com/openai/v1".to_string(),
+            api_key: "".to_string(),
+            model: "whisper-large-v3-turbo".to_string(),
+            enabled: true,
+        },
+        CloudTranscribeProvider {
+            id: "openai".to_string(),
+            label: "OpenAI".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            api_key: "".to_string(),
+            model: "whisper-1".to_string(),
+            enabled: false,
+        },
+    ]
 }
 
 fn default_vad_enabled() -> bool {
@@ -891,6 +945,53 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     changed
 }
 
+fn ensure_cloud_transcribe_defaults(settings: &mut AppSettings) -> bool {
+    let mut changed = false;
+    if settings.cloud_transcribe_providers.is_empty() {
+        settings.cloud_transcribe_providers = default_cloud_transcribe_providers();
+        changed = true;
+    } else {
+        // Ensure standard templates exist if not present
+        for default_p in default_cloud_transcribe_providers() {
+            if !settings.cloud_transcribe_providers.iter().any(|p| p.id == default_p.id) {
+                settings.cloud_transcribe_providers.push(default_p);
+                changed = true;
+            }
+        }
+    }
+
+    // Migration from legacy single fields into provider profile if provider has empty key
+    if !settings.cloud_transcribe_api_key.trim().is_empty() {
+        let base_url = settings.cloud_transcribe_base_url.to_lowercase();
+        let target_id = if base_url.contains("groq") {
+            "groq"
+        } else if base_url.contains("vibecode") || base_url.contains("bitrix") {
+            "bitrix"
+        } else if base_url.contains("openai") {
+            "openai"
+        } else {
+            "bitrix"
+        };
+
+        if let Some(p) = settings.cloud_transcribe_providers.iter_mut().find(|p| p.id == target_id) {
+            if p.api_key.trim().is_empty() {
+                p.api_key = settings.cloud_transcribe_api_key.clone();
+                p.base_url = settings.cloud_transcribe_base_url.clone();
+                p.model = settings.cloud_transcribe_model.clone();
+                p.enabled = true;
+                changed = true;
+            }
+        }
+    }
+
+    if settings.cloud_transcribe_selected_provider_id.trim().is_empty() {
+        settings.cloud_transcribe_selected_provider_id = "bitrix".to_string();
+        changed = true;
+    }
+
+    changed
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
@@ -994,6 +1095,9 @@ pub fn get_default_settings() -> AppSettings {
         cloud_transcribe_base_url: default_cloud_transcribe_base_url(),
         cloud_transcribe_api_key: "".to_string(),
         cloud_transcribe_model: default_cloud_transcribe_model(),
+        cloud_transcribe_providers: default_cloud_transcribe_providers(),
+        cloud_transcribe_selected_provider_id: default_cloud_transcribe_selected_provider_id(),
+        cloud_transcribe_parallel: default_cloud_transcribe_parallel(),
         experimental_enabled: false,
         lazy_stream_close: false,
         keyboard_implementation: KeyboardImplementation::default(),
@@ -1096,6 +1200,10 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
     };
 
     if ensure_post_process_defaults(&mut settings) {
+        store.set("settings", serde_json::to_value(&settings).unwrap());
+    }
+
+    if ensure_cloud_transcribe_defaults(&mut settings) {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
