@@ -133,6 +133,14 @@ async saveCloudTranscribeProvidersSetting(providers: CloudTranscribeProvider[]) 
     else return { status: "error", error: e  as any };
 }
 },
+async testCloudTranscribeProvider(provider: CloudTranscribeProvider) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_cloud_transcribe_provider", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAutostartSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_autostart_setting", { enabled }) };

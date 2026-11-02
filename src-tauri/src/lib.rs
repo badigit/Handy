@@ -665,6 +665,7 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_cloud_transcribe_parallel_setting,
             shortcut::change_cloud_transcribe_selected_provider_setting,
             shortcut::save_cloud_transcribe_providers_setting,
+            shortcut::test_cloud_transcribe_provider,
             shortcut::change_autostart_setting,
             shortcut::change_translate_to_english_setting,
             shortcut::change_selected_language_setting,

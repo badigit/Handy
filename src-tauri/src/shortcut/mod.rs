@@ -963,6 +963,21 @@ pub fn save_cloud_transcribe_providers_setting(
 
 #[tauri::command]
 #[specta::specta]
+pub fn test_cloud_transcribe_provider(
+    provider: CloudTranscribeProvider,
+) -> Result<String, String> {
+    let st = std::time::Instant::now();
+    match crate::managers::transcription::TranscriptionManager::test_cloud_provider(&provider) {
+        Ok(_) => {
+            let elapsed = st.elapsed();
+            Ok(format!("Connected in {:.2}s!", elapsed.as_secs_f64()))
+        }
+        Err(e) => Err(format!("{}", e)),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_autostart_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.autostart_enabled = enabled;

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Plus, Trash2, Zap, Check, Eye, EyeOff } from "lucide-react";
+import React, { useState } from "react";
+import { Plus, Trash2, Zap, Check, Eye, EyeOff, Activity, RefreshCw } from "lucide-react";
 import { SettingContainer } from "../ui/SettingContainer";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
@@ -7,6 +7,7 @@ import { Input } from "../ui/Input";
 import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
 import { useSettings } from "../../hooks/useSettings";
+import { commands } from "@/bindings";
 import type { CloudTranscribeProvider } from "@/bindings";
 
 interface CloudTranscriptionSettingsProps {
@@ -69,8 +70,40 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
   // Local state for passwords show/hide
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
 
+  // Local state for test connection status
+  const [testStatus, setTestStatus] = useState<
+    Record<string, { loading: boolean; result?: string; error?: string }>
+  >({});
+
   const toggleShowKey = (id: string) => {
     setShowKeys((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleTestProvider = async (provider: CloudTranscribeProvider) => {
+    setTestStatus((prev) => ({
+      ...prev,
+      [provider.id]: { loading: true },
+    }));
+
+    try {
+      const res = await commands.testCloudTranscribeProvider(provider);
+      if (res.status === "ok") {
+        setTestStatus((prev) => ({
+          ...prev,
+          [provider.id]: { loading: false, result: res.data },
+        }));
+      } else {
+        setTestStatus((prev) => ({
+          ...prev,
+          [provider.id]: { loading: false, error: res.error },
+        }));
+      }
+    } catch (err: any) {
+      setTestStatus((prev) => ({
+        ...prev,
+        [provider.id]: { loading: false, error: err?.message || String(err) },
+      }));
+    }
   };
 
   const updateProviderField = (
@@ -198,6 +231,7 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
             {providers.map((p) => {
               const isActiveSingle = !isParallel && selectedProviderId === p.id;
               const isParticipant = isParallel ? p.enabled : isActiveSingle;
+              const status = testStatus[p.id];
 
               return (
                 <div
@@ -257,7 +291,7 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
                     <div>
                       <label className="block text-[11px] font-medium text-neutral-400 mb-1">
                         Endpoint Base URL
@@ -315,6 +349,36 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                         variant="compact"
                         className="w-full text-xs font-mono"
                       />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2.5 border-t border-neutral-800/80">
+                    <div className="flex items-center gap-2.5 text-xs">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={status?.loading || !p.base_url.trim()}
+                        onClick={() => handleTestProvider(p)}
+                        className="text-xs py-1"
+                      >
+                        {status?.loading ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin mr-1 inline" />
+                        ) : (
+                          <Activity className="w-3.5 h-3.5 mr-1 inline" />
+                        )}
+                        {status?.loading ? "Checking..." : "Test Provider"}
+                      </Button>
+
+                      {status?.result && (
+                        <span className="text-emerald-400 font-medium flex items-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> {status.result}
+                        </span>
+                      )}
+                      {status?.error && (
+                        <span className="text-red-400 font-medium break-all max-w-[500px]">
+                          ✗ {status.error}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

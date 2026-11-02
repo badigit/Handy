@@ -1204,7 +1204,13 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
         .emit(&self.app_handle);
     }
 
-    fn transcribe_single_provider(
+    pub fn test_cloud_provider(provider: &CloudTranscribeProvider) -> Result<String> {
+        let samples = vec![0.0f32; 8000];
+        let wav_bytes = samples_to_wav_bytes(&samples)?;
+        Self::transcribe_single_provider(provider, None, &wav_bytes, 15, 1)
+    }
+
+    pub fn transcribe_single_provider(
         provider: &CloudTranscribeProvider,
         language: Option<&str>,
         wav_bytes: &[u8],
