@@ -1206,7 +1206,7 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
 
     pub fn test_cloud_provider(provider: &CloudTranscribeProvider) -> Result<String> {
         let samples = vec![0.0f32; 8000];
-        let wav_bytes = samples_to_wav_bytes(&samples)?;
+        let wav_bytes = Self::samples_to_wav_bytes(&samples)?;
         Self::transcribe_single_provider(provider, None, &wav_bytes, 15, 1)
     }
 
