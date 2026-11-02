@@ -1361,7 +1361,11 @@ impl TranscriptionManager {
         ))
     }
 
-    pub fn transcribe_cloud(&self, settings: &AppSettings, audio: &[f32]) -> Result<String> {
+    pub fn transcribe_cloud(
+        &self,
+        settings: &AppSettings,
+        audio: &[f32],
+    ) -> Result<(String, String)> {
         let wav_bytes = Self::samples_to_wav_bytes(audio)?;
         let language = if settings.selected_language != "auto"
             && !settings.selected_language.trim().is_empty()
@@ -1415,17 +1419,18 @@ impl TranscriptionManager {
                 drop(tx);
 
                 let mut errors = Vec::new();
-                let mut winner_text = None;
+                let mut winner = None;
 
                 while let Ok((label, res, elapsed)) = rx.recv() {
                     match res {
                         Ok(text) if !text.trim().is_empty() => {
+                            let engine_label = format!("{} ({:.2}s)", label, elapsed.as_secs_f64());
                             info!(
                                 "🏆 Cloud provider '{}' won the transcription race in {:.2}s!",
                                 label,
                                 elapsed.as_secs_f64()
                             );
-                            winner_text = Some(text);
+                            winner = Some((text, engine_label));
                             break;
                         }
                         Ok(_) => {
@@ -1448,8 +1453,8 @@ impl TranscriptionManager {
                     }
                 }
 
-                if let Some(text) = winner_text {
-                    return Ok(text);
+                if let Some(res) = winner {
+                    return Ok(res);
                 } else {
                     return Err(anyhow::anyhow!(
                         "All {} parallel cloud providers failed: {}",
@@ -1462,13 +1467,20 @@ impl TranscriptionManager {
                     "Only 1 enabled cloud provider configured; running in single mode ({})",
                     active_candidates[0].label
                 );
-                return Self::transcribe_single_provider(
+                let st = Instant::now();
+                let text = Self::transcribe_single_provider(
                     &active_candidates[0],
                     language.as_deref(),
                     &wav_bytes,
                     25,
                     3,
+                )?;
+                let engine = format!(
+                    "{} ({:.2}s)",
+                    active_candidates[0].label,
+                    st.elapsed().as_secs_f64()
                 );
+                return Ok((text, engine));
             }
         }
 
@@ -1487,10 +1499,14 @@ impl TranscriptionManager {
                 enabled: true,
             });
 
-        Self::transcribe_single_provider(&provider, language.as_deref(), &wav_bytes, 25, 3)
+        let st = Instant::now();
+        let text =
+            Self::transcribe_single_provider(&provider, language.as_deref(), &wav_bytes, 25, 3)?;
+        let engine = format!("{} ({:.2}s)", provider.label, st.elapsed().as_secs_f64());
+        Ok((text, engine))
     }
 
-    pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+    pub fn transcribe(&self, audio: Vec<f32>) -> Result<(String, String)> {
         #[cfg(debug_assertions)]
         if std::env::var("HANDY_FORCE_TRANSCRIPTION_FAILURE").is_ok() {
             return Err(anyhow::anyhow!(
@@ -1509,8 +1525,10 @@ impl TranscriptionManager {
         if audio.is_empty() {
             debug!("Empty audio vector");
             self.maybe_unload_immediately("empty audio");
-            return Ok(String::new());
+            return Ok((String::new(), "Empty".to_string()));
         }
+
+        let mut is_fallback = false;
 
         // Get current settings for configuration
         let settings = get_settings(&self.app_handle);
@@ -1519,7 +1537,7 @@ impl TranscriptionManager {
             && !settings.cloud_transcribe_base_url.trim().is_empty()
         {
             match self.transcribe_cloud(&settings, &audio) {
-                Ok(raw_result) => {
+                Ok((raw_result, engine)) => {
                     let output_language = if settings.selected_language != "auto" {
                         OutputLanguageEvidence::UserSelected(settings.selected_language.clone())
                     } else {
@@ -1537,8 +1555,8 @@ impl TranscriptionManager {
                     let audio_secs = audio_len as f64 / 16_000.0;
                     let speedup = real_time_factor(audio_secs, elapsed_secs);
                     info!(
-                        "Cloud transcription completed in {:.2}s for {:.2}s of audio ({:.2}x real-time)",
-                        elapsed_secs, audio_secs, speedup
+                        "Cloud transcription completed via {} in {:.2}s for {:.2}s of audio ({:.2}x real-time)",
+                        engine, elapsed_secs, audio_secs, speedup
                     );
                     if filtered_result.is_empty() {
                         info!("Cloud transcription result is empty");
@@ -1548,7 +1566,7 @@ impl TranscriptionManager {
                             crate::utils::redact_text(&filtered_result)
                         );
                     }
-                    return Ok(filtered_result);
+                    return Ok((filtered_result, engine));
                 }
                 Err(cloud_err) => {
                     warn!(
@@ -1576,6 +1594,7 @@ impl TranscriptionManager {
                                 return Err(cloud_err);
                             }
                         }
+                        is_fallback = true;
                         // Fall through to local model transcription below!
                     } else {
                         error!(
@@ -1922,9 +1941,21 @@ impl TranscriptionManager {
             );
         }
 
+        let model_label = active_model
+            .split('/')
+            .last()
+            .unwrap_or(&active_model)
+            .trim_end_matches(".gguf");
+
+        let engine = if is_fallback {
+            format!("Local fallback: {} ({:.2}s)", model_label, elapsed_secs)
+        } else {
+            format!("Local: {} ({:.2}s)", model_label, elapsed_secs)
+        };
+
         self.maybe_unload_immediately("transcription");
 
-        Ok(final_result)
+        Ok((final_result, engine))
     }
 }
 

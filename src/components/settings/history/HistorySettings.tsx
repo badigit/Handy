@@ -356,7 +356,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   return (
     <div className="px-4 py-2 pb-5 flex flex-col gap-3">
       <div className="flex justify-between items-center">
-        <p className="text-sm font-medium">{formattedDate}</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-medium">{formattedDate}</p>
+          {entry.transcription_engine && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-normal bg-mid-gray/15 text-text/70 border border-mid-gray/20">
+              {entry.transcription_engine}
+            </span>
+          )}
+        </div>
         <div className="flex items-center">
           <IconButton
             onClick={handleCopyText}

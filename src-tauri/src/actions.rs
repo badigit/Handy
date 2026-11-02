@@ -660,7 +660,9 @@ impl ShortcutAction for TranscribeAction {
                         // transcription of the same audio. A finalize timeout is
                         // surfaced instead — the worker may still hold the engine,
                         // so a batch fallback would contend with it.
-                        Ok(Some(text)) if !text.trim().is_empty() => Ok(text),
+                        Ok(Some(text)) if !text.trim().is_empty() => {
+                            Ok((text, "Live Stream".to_string()))
+                        }
                         Ok(_) => tm.transcribe(samples),
                         Err(err) => Err(err),
                     };
@@ -697,10 +699,11 @@ impl ShortcutAction for TranscribeAction {
                     }
 
                     match transcription_result {
-                        Ok(transcription) => {
+                        Ok((transcription, engine)) => {
                             debug!(
-                                "Transcription completed in {:?}: '{}'",
+                                "Transcription completed in {:?} via {}: '{}'",
                                 transcription_time.elapsed(),
+                                engine,
                                 utils::redact_text(&transcription)
                             );
 
@@ -738,6 +741,7 @@ impl ShortcutAction for TranscribeAction {
                                     post_process,
                                     processed.post_processed_text.clone(),
                                     processed.post_process_prompt.clone(),
+                                    Some(engine),
                                 ) {
                                     error!("Failed to save history entry: {}", err);
                                 }
@@ -799,6 +803,7 @@ impl ShortcutAction for TranscribeAction {
                                     file_name,
                                     String::new(),
                                     post_process,
+                                    None,
                                     None,
                                     None,
                                 ) {
