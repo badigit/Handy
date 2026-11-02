@@ -1,5 +1,14 @@
 import React, { useState } from "react";
-import { Plus, Trash2, Zap, Check, Eye, EyeOff, Activity, RefreshCw } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Zap,
+  Check,
+  Eye,
+  EyeOff,
+  Activity,
+  RefreshCw,
+} from "lucide-react";
 import { SettingContainer } from "../ui/SettingContainer";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
@@ -14,7 +23,10 @@ interface CloudTranscriptionSettingsProps {
   grouped?: boolean;
 }
 
-const DEFAULT_PRESETS: Record<string, { label: string; base_url: string; model: string }> = {
+const DEFAULT_PRESETS: Record<
+  string,
+  { label: string; base_url: string; model: string }
+> = {
   bitrix: {
     label: "Bitrix24 (VibeCode)",
     base_url: "https://vibecode.bitrix24.tech/v1",
@@ -32,15 +44,18 @@ const DEFAULT_PRESETS: Record<string, { label: string; base_url: string; model: 
   },
 };
 
-export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProps> = ({
-  grouped = true,
-}) => {
+export const CloudTranscriptionSettings: React.FC<
+  CloudTranscriptionSettingsProps
+> = ({ grouped = true }) => {
   const { getSetting, updateSetting, isUpdating } = useSettings();
 
   const enabled = getSetting("cloud_transcribe_enabled") ?? false;
   const isParallel = getSetting("cloud_transcribe_parallel") ?? false;
-  const selectedProviderId = getSetting("cloud_transcribe_selected_provider_id") ?? "bitrix";
-  const providers: CloudTranscribeProvider[] = getSetting("cloud_transcribe_providers") ?? [
+  const selectedProviderId =
+    getSetting("cloud_transcribe_selected_provider_id") ?? "bitrix";
+  const providers: CloudTranscribeProvider[] = getSetting(
+    "cloud_transcribe_providers",
+  ) ?? [
     {
       id: "bitrix",
       label: DEFAULT_PRESETS.bitrix.label,
@@ -197,7 +212,9 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
               <Dropdown
                 options={providerOptions}
                 selectedValue={selectedProviderId}
-                onSelect={(val) => updateSetting("cloud_transcribe_selected_provider_id", val)}
+                onSelect={(val) =>
+                  updateSetting("cloud_transcribe_selected_provider_id", val)
+                }
                 className="flex-1 min-w-[280px]"
               />
             </SettingContainer>
@@ -247,7 +264,9 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                       <Input
                         type="text"
                         value={p.label}
-                        onChange={(e) => updateProviderField(p.id, "label", e.target.value)}
+                        onChange={(e) =>
+                          updateProviderField(p.id, "label", e.target.value)
+                        }
                         placeholder="Provider Name"
                         variant="compact"
                         className="font-medium text-sm max-w-[240px]"
@@ -257,7 +276,13 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                           <input
                             type="checkbox"
                             checked={p.enabled}
-                            onChange={(e) => updateProviderField(p.id, "enabled", e.target.checked)}
+                            onChange={(e) =>
+                              updateProviderField(
+                                p.id,
+                                "enabled",
+                                e.target.checked,
+                              )
+                            }
                             className="rounded border-neutral-600 text-emerald-500 focus:ring-emerald-500"
                           />
                           <span>Participate in Race</span>
@@ -265,7 +290,12 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                       ) : (
                         <button
                           type="button"
-                          onClick={() => updateSetting("cloud_transcribe_selected_provider_id", p.id)}
+                          onClick={() =>
+                            updateSetting(
+                              "cloud_transcribe_selected_provider_id",
+                              p.id,
+                            )
+                          }
                           className={`text-xs px-2.5 py-0.5 rounded-full font-medium transition-colors cursor-pointer ${
                             isActiveSingle
                               ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
@@ -299,7 +329,9 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                       <Input
                         type="text"
                         value={p.base_url}
-                        onChange={(e) => updateProviderField(p.id, "base_url", e.target.value)}
+                        onChange={(e) =>
+                          updateProviderField(p.id, "base_url", e.target.value)
+                        }
                         placeholder="https://api.openai.com/v1"
                         variant="compact"
                         className="w-full text-xs font-mono"
@@ -330,7 +362,9 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                       <Input
                         type={showKeys[p.id] ? "text" : "password"}
                         value={p.api_key}
-                        onChange={(e) => updateProviderField(p.id, "api_key", e.target.value)}
+                        onChange={(e) =>
+                          updateProviderField(p.id, "api_key", e.target.value)
+                        }
                         placeholder="sk-... or vibe_api_..."
                         variant="compact"
                         className="w-full text-xs font-mono"
@@ -344,7 +378,9 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
                       <Input
                         type="text"
                         value={p.model}
-                        onChange={(e) => updateProviderField(p.id, "model", e.target.value)}
+                        onChange={(e) =>
+                          updateProviderField(p.id, "model", e.target.value)
+                        }
                         placeholder="whisper-1"
                         variant="compact"
                         className="w-full text-xs font-mono"
@@ -389,9 +425,12 @@ export const CloudTranscriptionSettings: React.FC<CloudTranscriptionSettingsProp
           <div className="mt-3 p-3 rounded-lg bg-neutral-900/40 border border-neutral-800 text-xs text-neutral-400 flex items-start gap-2">
             <Zap className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
             <div>
-              <span className="font-medium text-neutral-200">Local Whisper Fallback:</span> If all
-              cloud providers fail, return HTTP 500, or time out, Handy will automatically fall back
-              to your local Whisper model without losing the recorded audio.
+              <span className="font-medium text-neutral-200">
+                Local Whisper Fallback:
+              </span>{" "}
+              If all cloud providers fail, return HTTP 500, or time out, Handy
+              will automatically fall back to your local Whisper model without
+              losing the recorded audio.
             </div>
           </div>
         </>

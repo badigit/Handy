@@ -461,6 +461,10 @@
         "cancel": "İptal",
         "selectToEdit": "Ayrıntılarını görüntülemek ve düzenlemek için yukarıdan bir prompt seçin.",
         "createFirst": "İlk son işlem promptunuzu oluşturmak için yukarıdaki “Yeni Prompt Oluştur” seçeneğine tıklayın."
+      },
+      "always": {
+        "title": "Always run post-processing",
+        "description": "Automatically refine transcriptions with AI even on the default shortcut"
       }
     },
     "history": {

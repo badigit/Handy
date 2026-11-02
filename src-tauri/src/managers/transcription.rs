@@ -1172,29 +1172,29 @@ impl TranscriptionManager {
         .emit(&self.app_handle);
     }
 
-fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: 16000,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut cursor = std::io::Cursor::new(Vec::new());
-    {
-        let mut writer = hound::WavWriter::new(&mut cursor, spec)
-            .map_err(|e| anyhow::anyhow!("Failed to initialize WAV writer: {}", e))?;
-        for &sample in samples {
-            let sample_i16 = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+    fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = hound::WavWriter::new(&mut cursor, spec)
+                .map_err(|e| anyhow::anyhow!("Failed to initialize WAV writer: {}", e))?;
+            for &sample in samples {
+                let sample_i16 = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                writer
+                    .write_sample(sample_i16)
+                    .map_err(|e| anyhow::anyhow!("Failed to write WAV sample: {}", e))?;
+            }
             writer
-                .write_sample(sample_i16)
-                .map_err(|e| anyhow::anyhow!("Failed to write WAV sample: {}", e))?;
+                .finalize()
+                .map_err(|e| anyhow::anyhow!("Failed to finalize WAV: {}", e))?;
         }
-        writer
-            .finalize()
-            .map_err(|e| anyhow::anyhow!("Failed to finalize WAV: {}", e))?;
+        Ok(cursor.into_inner())
     }
-    Ok(cursor.into_inner())
-}
 
     fn emit_stream_text(&self, committed: &str, tentative: &str) {
         let _ = StreamTextEvent {
@@ -1238,7 +1238,13 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
             .timeout(Duration::from_secs(timeout_secs))
             .connect_timeout(Duration::from_secs(8))
             .build()
-            .map_err(|e| anyhow::anyhow!("Failed to build HTTP client for '{}': {}", provider.label, e))?;
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to build HTTP client for '{}': {}",
+                    provider.label,
+                    e
+                )
+            })?;
 
         let mut last_error = String::new();
 
@@ -1357,7 +1363,9 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
 
     pub fn transcribe_cloud(&self, settings: &AppSettings, audio: &[f32]) -> Result<String> {
         let wav_bytes = Self::samples_to_wav_bytes(audio)?;
-        let language = if settings.selected_language != "auto" && !settings.selected_language.trim().is_empty() {
+        let language = if settings.selected_language != "auto"
+            && !settings.selected_language.trim().is_empty()
+        {
             Some(settings.selected_language.trim().to_string())
         } else {
             None
@@ -1367,7 +1375,9 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
             let active_candidates: Vec<CloudTranscribeProvider> = settings
                 .cloud_transcribe_providers
                 .iter()
-                .filter(|p| p.enabled && !p.base_url.trim().is_empty() && !p.api_key.trim().is_empty())
+                .filter(|p| {
+                    p.enabled && !p.base_url.trim().is_empty() && !p.api_key.trim().is_empty()
+                })
                 .cloned()
                 .collect();
 
@@ -1375,7 +1385,10 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
                 info!(
                     "Starting parallel cloud transcription race between {} providers: {:?}",
                     active_candidates.len(),
-                    active_candidates.iter().map(|p| &p.label).collect::<Vec<_>>()
+                    active_candidates
+                        .iter()
+                        .map(|p| &p.label)
+                        .collect::<Vec<_>>()
                 );
 
                 let (tx, rx) = mpsc::channel();
@@ -1416,11 +1429,20 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
                             break;
                         }
                         Ok(_) => {
-                            warn!("Cloud provider '{}' returned empty text in {:.2}s", label, elapsed.as_secs_f64());
+                            warn!(
+                                "Cloud provider '{}' returned empty text in {:.2}s",
+                                label,
+                                elapsed.as_secs_f64()
+                            );
                             errors.push(format!("{}: empty response", label));
                         }
                         Err(e) => {
-                            warn!("Cloud provider '{}' failed in {:.2}s: {}", label, elapsed.as_secs_f64(), e);
+                            warn!(
+                                "Cloud provider '{}' failed in {:.2}s: {}",
+                                label,
+                                elapsed.as_secs_f64(),
+                                e
+                            );
                             errors.push(format!("{}: {}", label, e));
                         }
                     }
@@ -1436,7 +1458,10 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
                     ));
                 }
             } else if active_candidates.len() == 1 {
-                info!("Only 1 enabled cloud provider configured; running in single mode ({})", active_candidates[0].label);
+                info!(
+                    "Only 1 enabled cloud provider configured; running in single mode ({})",
+                    active_candidates[0].label
+                );
                 return Self::transcribe_single_provider(
                     &active_candidates[0],
                     language.as_deref(),
@@ -1453,15 +1478,13 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
             .iter()
             .find(|p| p.id == settings.cloud_transcribe_selected_provider_id)
             .cloned()
-            .unwrap_or_else(|| {
-                CloudTranscribeProvider {
-                    id: "custom".to_string(),
-                    label: "Custom Cloud".to_string(),
-                    base_url: settings.cloud_transcribe_base_url.clone(),
-                    api_key: settings.cloud_transcribe_api_key.clone(),
-                    model: settings.cloud_transcribe_model.clone(),
-                    enabled: true,
-                }
+            .unwrap_or_else(|| CloudTranscribeProvider {
+                id: "custom".to_string(),
+                label: "Custom Cloud".to_string(),
+                base_url: settings.cloud_transcribe_base_url.clone(),
+                api_key: settings.cloud_transcribe_api_key.clone(),
+                model: settings.cloud_transcribe_model.clone(),
+                enabled: true,
             });
 
         Self::transcribe_single_provider(&provider, language.as_deref(), &wav_bytes, 25, 3)
@@ -1492,7 +1515,9 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
         // Get current settings for configuration
         let settings = get_settings(&self.app_handle);
 
-        if settings.cloud_transcribe_enabled && !settings.cloud_transcribe_base_url.trim().is_empty() {
+        if settings.cloud_transcribe_enabled
+            && !settings.cloud_transcribe_base_url.trim().is_empty()
+        {
             match self.transcribe_cloud(&settings, &audio) {
                 Ok(raw_result) => {
                     let output_language = if settings.selected_language != "auto" {
@@ -1534,10 +1559,7 @@ fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
                     let fallback_model = settings.selected_model.clone();
                     let local_model_available = self.is_model_loaded()
                         || (!fallback_model.is_empty()
-                            && self
-                                .model_manager
-                                .get_model_path(&fallback_model)
-                                .is_ok());
+                            && self.model_manager.get_model_path(&fallback_model).is_ok());
 
                     if local_model_available {
                         warn!(

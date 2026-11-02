@@ -461,6 +461,10 @@
         "cancel": "Avbryt",
         "selectToEdit": "Välj en prompt ovan för att visa och redigera dess detaljer.",
         "createFirst": "Klicka på 'Skapa ny prompt' ovan för att skapa din första prompt för efterbearbetning."
+      },
+      "always": {
+        "title": "Always run post-processing",
+        "description": "Automatically refine transcriptions with AI even on the default shortcut"
       }
     },
     "history": {

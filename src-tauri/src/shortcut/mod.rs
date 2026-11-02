@@ -854,10 +854,7 @@ pub fn change_cloud_transcribe_api_key_setting(
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_cloud_transcribe_model_setting(
-    app: AppHandle,
-    model: String,
-) -> Result<(), String> {
+pub fn change_cloud_transcribe_model_setting(app: AppHandle, model: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.cloud_transcribe_model = model.clone();
     settings::write_settings(&app, settings);
@@ -963,9 +960,7 @@ pub fn save_cloud_transcribe_providers_setting(
 
 #[tauri::command]
 #[specta::specta]
-pub fn test_cloud_transcribe_provider(
-    provider: CloudTranscribeProvider,
-) -> Result<String, String> {
+pub fn test_cloud_transcribe_provider(provider: CloudTranscribeProvider) -> Result<String, String> {
     let st = std::time::Instant::now();
     match crate::managers::transcription::TranscriptionManager::test_cloud_provider(&provider) {
         Ok(_) => {
@@ -1257,6 +1252,15 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
     }
 
     crate::secure_input::reconcile_fallback(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_post_process_always_setting(app: AppHandle, always: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.post_process_always = always;
+    settings::write_settings(&app, settings);
     Ok(())
 }
 

@@ -461,6 +461,10 @@
         "cancel": "Cancelar",
         "selectToEdit": "Selecciona un prompt arriba para ver y editar sus detalles.",
         "createFirst": "Haz clic en 'Crear nuevo prompt' arriba para crear tu primer prompt de post procesamiento."
+      },
+      "always": {
+        "title": "Always run post-processing",
+        "description": "Automatically refine transcriptions with AI even on the default shortcut"
       }
     },
     "history": {

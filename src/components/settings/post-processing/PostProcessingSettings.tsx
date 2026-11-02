@@ -13,6 +13,7 @@ import {
 import { Button } from "../../ui/Button";
 import { ResetButton } from "../../ui/ResetButton";
 import { Input } from "../../ui/Input";
+import { ToggleSwitch } from "../../ui/ToggleSwitch";
 
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
@@ -426,10 +427,22 @@ PostProcessingSettingsPrompts.displayName = "PostProcessingSettingsPrompts";
 
 export const PostProcessingSettings: React.FC = () => {
   const { t } = useTranslation();
+  const { getSetting, updateSetting, isUpdating } = useSettings();
+
+  const postProcessAlways = getSetting("post_process_always") ?? false;
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.postProcessing.hotkey.title")}>
+        <ToggleSwitch
+          checked={postProcessAlways}
+          onChange={(checked) => updateSetting("post_process_always", checked)}
+          isUpdating={isUpdating("post_process_always")}
+          label={t("settings.postProcessing.always.title")}
+          description={t("settings.postProcessing.always.description")}
+          descriptionMode="tooltip"
+          grouped={true}
+        />
         <ShortcutInput
           shortcutId="transcribe_with_post_process"
           descriptionMode="tooltip"

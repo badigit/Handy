@@ -468,6 +468,8 @@ pub struct AppSettings {
     pub auto_submit_key: AutoSubmitKey,
     #[serde(default = "default_post_process_enabled")]
     pub post_process_enabled: bool,
+    #[serde(default = "default_post_process_always")]
+    pub post_process_always: bool,
     #[serde(default = "default_post_process_provider_id")]
     pub post_process_provider_id: String,
     #[serde(default = "default_post_process_providers")]
@@ -725,6 +727,10 @@ fn default_post_process_enabled() -> bool {
     false
 }
 
+fn default_post_process_always() -> bool {
+    false
+}
+
 fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .map(|l| l.replace('_', "-"))
@@ -953,7 +959,11 @@ fn ensure_cloud_transcribe_defaults(settings: &mut AppSettings) -> bool {
     } else {
         // Ensure standard templates exist if not present
         for default_p in default_cloud_transcribe_providers() {
-            if !settings.cloud_transcribe_providers.iter().any(|p| p.id == default_p.id) {
+            if !settings
+                .cloud_transcribe_providers
+                .iter()
+                .any(|p| p.id == default_p.id)
+            {
                 settings.cloud_transcribe_providers.push(default_p);
                 changed = true;
             }
@@ -973,7 +983,11 @@ fn ensure_cloud_transcribe_defaults(settings: &mut AppSettings) -> bool {
             "bitrix"
         };
 
-        if let Some(p) = settings.cloud_transcribe_providers.iter_mut().find(|p| p.id == target_id) {
+        if let Some(p) = settings
+            .cloud_transcribe_providers
+            .iter_mut()
+            .find(|p| p.id == target_id)
+        {
             if p.api_key.trim().is_empty() {
                 p.api_key = settings.cloud_transcribe_api_key.clone();
                 p.base_url = settings.cloud_transcribe_base_url.clone();
@@ -984,7 +998,11 @@ fn ensure_cloud_transcribe_defaults(settings: &mut AppSettings) -> bool {
         }
     }
 
-    if settings.cloud_transcribe_selected_provider_id.trim().is_empty() {
+    if settings
+        .cloud_transcribe_selected_provider_id
+        .trim()
+        .is_empty()
+    {
         settings.cloud_transcribe_selected_provider_id = "bitrix".to_string();
         changed = true;
     }
@@ -1081,6 +1099,7 @@ pub fn get_default_settings() -> AppSettings {
         auto_submit: default_auto_submit(),
         auto_submit_key: AutoSubmitKey::default(),
         post_process_enabled: default_post_process_enabled(),
+        post_process_always: default_post_process_always(),
         post_process_provider_id: default_post_process_provider_id(),
         post_process_providers: default_post_process_providers(),
         post_process_api_keys: default_post_process_api_keys(),

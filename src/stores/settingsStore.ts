@@ -105,7 +105,9 @@ const settingUpdaters: {
   cloud_transcribe_selected_provider_id: (value) =>
     commands.changeCloudTranscribeSelectedProviderSetting(value as string),
   cloud_transcribe_providers: (value) =>
-    commands.saveCloudTranscribeProvidersSetting(value as CloudTranscribeProvider[]),
+    commands.saveCloudTranscribeProvidersSetting(
+      value as CloudTranscribeProvider[],
+    ),
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   update_checks_enabled: (value) =>
@@ -172,6 +174,8 @@ const settingUpdaters: {
   history_limit: (value) => commands.updateHistoryLimit(value as number),
   post_process_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
+  post_process_always: (value) =>
+    commands.changePostProcessAlwaysSetting(value as boolean),
   post_process_selected_prompt_id: (value) =>
     commands.setPostProcessSelectedPrompt(value as string),
   mute_while_recording: (value) =>

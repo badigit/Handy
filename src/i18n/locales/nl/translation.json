@@ -461,6 +461,10 @@
         "cancel": "Annuleren",
         "selectToEdit": "Selecteer hierboven een prompt om de details te bekijken en te bewerken.",
         "createFirst": "Klik hierboven op 'Nieuwe prompt maken' om je eerste naverwerkingsprompt aan te maken."
+      },
+      "always": {
+        "title": "Always run post-processing",
+        "description": "Automatically refine transcriptions with AI even on the default shortcut"
       }
     },
     "history": {
