@@ -1,4 +1,29 @@
 {
+  "cloudTranscription": {
+    "title": "Cloud Transcription (OpenAI / Bitrix / Groq)",
+    "enabled": "Enable Cloud Transcription",
+    "parallel": "Parallel Race Mode (Hedged Requests)",
+    "active": "Active Cloud Provider",
+    "configured": "Configured Cloud Providers",
+    "custom": "Custom",
+    "customName": "Custom Provider",
+    "participate": "Participate in Race",
+    "selected": "✓ Active",
+    "select": "Set Active",
+    "delete": "Delete provider",
+    "endpoint": "Endpoint Base URL",
+    "key": "API Key / Bearer Token",
+    "hide": "Hide",
+    "show": "Show",
+    "model": "Model Identifier",
+    "checking": "Checking...",
+    "test": "Test Provider",
+    "fallback": "Local Whisper Fallback:",
+    "description1": "Transcribe via remote OpenAI-compatible speech-to-text API. Zero local GPU/VRAM needed.",
+    "description2": "Queries all enabled cloud providers simultaneously. The fastest successful response wins immediately! Eliminates waiting if one provider hangs or lags.",
+    "description3": "Select which cloud provider handles transcription in single-provider mode.",
+    "fallbackDescription": "If cloud requests fail, Handy uses the selected local model. Download it beforehand."
+  },
   "tray": {
     "settings": "Ayarlar...",
     "checkUpdates": "Güncellemeleri Kontrol Et...",
@@ -688,6 +713,10 @@
         "cancel": "İptal",
         "selectToEdit": "Ayrıntılarını görüntülemek ve düzenlemek için yukarıdan bir prompt seçin.",
         "createFirst": "İlk son işlem promptunuzu oluşturmak için yukarıdaki “Yeni Prompt Oluştur” seçeneğine tıklayın."
+      },
+      "always": {
+        "title": "Always run post-processing",
+        "description": "Automatically refine transcriptions with AI even on the default shortcut"
       }
     },
     "history": {

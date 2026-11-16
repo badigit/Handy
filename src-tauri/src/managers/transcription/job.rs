@@ -46,9 +46,21 @@ impl TranscriptionManager {
             return Ok(Some(Transcription {
                 text: String::new(),
                 language: None,
+                engine: "Empty".into(),
             }));
         }
 
+        if crate::settings::get_settings(&self.app_handle).cloud_transcribe_enabled {
+            if !control.proceed() {
+                return Ok(None);
+            }
+            let result = self.complete(started, audio, None)?;
+            return if control.proceed() {
+                Ok(Some(result))
+            } else {
+                Ok(None)
+            };
+        }
         self.touch_activity();
         self.initiate_model_load(false);
         // Read once: the model can't change until the job ends.
@@ -133,6 +145,7 @@ impl TranscriptionManager {
         Ok(Some(Transcription {
             text: paragraphs.join("\n\n"),
             language: Some(language),
+            engine: format!("Local: {} ({:.2}s)", active_model, elapsed_secs),
         }))
     }
 }

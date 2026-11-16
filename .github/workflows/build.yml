@@ -446,6 +446,17 @@ jobs:
           chmod +x "$tools_dir/linuxdeploy-${arch}.AppImage"
           "$tools_dir/linuxdeploy-${arch}.AppImage" --appimage-extract-and-run --version
 
+      - name: Check cloud transcription regressions (Windows x64)
+        if: contains(inputs.platform, 'windows') && !contains(inputs.target, 'aarch64')
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD/src-tauri/transcribe-libs;$env:PATH"
+          cargo test --manifest-path src-tauri/Cargo.toml --release --lib cloud_ -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --manifest-path src-tauri/Cargo.toml --release --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Build with Tauri
         uses: tauri-apps/tauri-action@v0
         env:

@@ -17,7 +17,8 @@ use crate::managers::model::ModelManager;
 use crate::notices::{self, Notice, NoticeCode, NoticeSource};
 use crate::overlay;
 use crate::settings::{
-    get_settings, AppSettings, ChineseScript, ModelUnloadTimeout, TranscribeAcceleratorSetting,
+    get_settings, AppSettings, ChineseScript, CloudTranscribeProvider, ModelUnloadTimeout,
+    TranscribeAcceleratorSetting,
 };
 use anyhow::Result;
 use chunked::{ChunkSetup, ChunkedDecode};
@@ -36,6 +37,8 @@ use tauri_specta::Event;
 use transcribe_cpp::{Backend, RunOptions, Task, Transcript};
 
 mod chunked;
+#[cfg(test)]
+mod cloud_tests;
 mod job;
 mod live;
 pub mod policy;
@@ -246,6 +249,7 @@ pub struct TranscriptionManager {
     /// The transcribe-cpp engine: owns the worker process, its model, and
     /// recovery from crashes and hangs.
     engine: EngineSupervisor,
+    cloud_cancel_epoch: AtomicU64,
     model_manager: Arc<ModelManager>,
     app_handle: AppHandle,
     current_model_id: Arc<Mutex<Option<String>>>,
@@ -284,6 +288,7 @@ impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
         let manager = Self {
             engine: EngineSupervisor::new(!transcribe_gpu_disabled_for_host()),
+            cloud_cancel_epoch: AtomicU64::new(0),
             model_manager,
             app_handle: app_handle.clone(),
             current_model_id: Arc::new(Mutex::new(None)),
@@ -963,6 +968,7 @@ impl TranscriptionManager {
     /// it is stopped; the model stays loaded and the next use starts a fresh
     /// worker for it.
     pub fn cancel_transcription(&self) {
+        self.cloud_cancel_epoch.fetch_add(1, Ordering::AcqRel);
         self.engine.cancel();
     }
 
@@ -977,6 +983,341 @@ impl TranscriptionManager {
 
     /// Transcribe a whole clip in batch: a re-transcribed history entry, or
     /// a file from the CLI.
+    fn samples_to_wav_bytes(samples: &[f32]) -> Result<Vec<u8>> {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = hound::WavWriter::new(&mut cursor, spec)
+                .map_err(|e| anyhow::anyhow!("Failed to initialize WAV writer: {}", e))?;
+            for &sample in samples {
+                let sample_i16 = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+                writer
+                    .write_sample(sample_i16)
+                    .map_err(|e| anyhow::anyhow!("Failed to write WAV sample: {}", e))?;
+            }
+            writer
+                .finalize()
+                .map_err(|e| anyhow::anyhow!("Failed to finalize WAV: {}", e))?;
+        }
+        Ok(cursor.into_inner())
+    }
+
+    pub fn test_cloud_provider(provider: &CloudTranscribeProvider) -> Result<String> {
+        let samples = vec![0.0f32; 8000];
+        let wav_bytes = Self::samples_to_wav_bytes(&samples)?;
+        Self::transcribe_single_provider(provider, None, &wav_bytes, 15, 1)
+    }
+
+    pub fn transcribe_single_provider(
+        provider: &CloudTranscribeProvider,
+        language: Option<&str>,
+        wav_bytes: &[u8],
+        timeout_secs: u64,
+        max_retries: usize,
+    ) -> Result<String> {
+        let base_url = provider.base_url.trim().trim_end_matches('/');
+        anyhow::ensure!(!base_url.is_empty(), "Cloud endpoint is empty");
+        anyhow::ensure!(max_retries > 0, "Cloud request needs at least one attempt");
+        let url = if base_url.ends_with("/audio/transcriptions") {
+            base_url.to_string()
+        } else if base_url.ends_with("/v1") {
+            format!("{}/audio/transcriptions", base_url)
+        } else {
+            format!("{}/v1/audio/transcriptions", base_url)
+        };
+
+        let model = if provider.model.trim().is_empty() {
+            "whisper-1".to_string()
+        } else {
+            provider.model.trim().to_string()
+        };
+
+        let api_key = provider.api_key.trim();
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(timeout_secs))
+            .connect_timeout(Duration::from_secs(8))
+            .build()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to build HTTP client for '{}': {}",
+                    provider.label,
+                    e
+                )
+            })?;
+
+        let mut last_error = String::new();
+
+        for attempt in 1..=max_retries {
+            if attempt > 1 {
+                info!(
+                    "Retrying cloud transcription with '{}' (attempt {}/{}) to '{}'...",
+                    provider.label, attempt, max_retries, url
+                );
+            }
+
+            let mut form = reqwest::blocking::multipart::Form::new()
+                .part(
+                    "file",
+                    reqwest::blocking::multipart::Part::bytes(wav_bytes.to_vec())
+                        .file_name("audio.wav")
+                        .mime_str("audio/wav")
+                        .map_err(|e| anyhow::anyhow!("Failed to set multipart MIME: {}", e))?,
+                )
+                .text("model", model.clone());
+
+            if let Some(lang) = language {
+                form = form.text("language", lang.to_string());
+            }
+
+            let mut request = client.post(&url);
+            if !api_key.is_empty() {
+                request = request
+                    .header("Authorization", format!("Bearer {}", api_key))
+                    .header("X-Api-Key", api_key);
+            }
+            request = request.multipart(form);
+
+            let response = match request.send() {
+                Ok(resp) => resp,
+                Err(e) => {
+                    last_error = format!("Network error: {}", e.without_url());
+                    warn!(
+                        "Cloud transcription '{}' attempt {}/{} network error: {}",
+                        provider.label, attempt, max_retries, last_error
+                    );
+                    if attempt < max_retries {
+                        let delay = Duration::from_millis(400 * attempt as u64);
+                        thread::sleep(delay);
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            };
+
+            let status = response.status();
+            let plain_text = response
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|v| v.starts_with("text/plain"));
+            let body_text = match response.text() {
+                Ok(text) => text,
+                Err(e) => {
+                    last_error = format!("Failed to read response body: {}", e);
+                    warn!(
+                        "Cloud transcription '{}' attempt {}/{} body read error: {}",
+                        provider.label, attempt, max_retries, e
+                    );
+                    if attempt < max_retries {
+                        let delay = Duration::from_millis(400 * attempt as u64);
+                        thread::sleep(delay);
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            };
+
+            if !status.is_success() {
+                let status_code = status.as_u16();
+                last_error = format!("HTTP {}", status_code);
+                warn!(
+                    "Cloud transcription '{}' attempt {}/{} returned HTTP {}",
+                    provider.label, attempt, max_retries, status_code
+                );
+
+                // Retry on server errors (5xx) or rate limits (429)
+                if (status_code >= 500 || status_code == 429) && attempt < max_retries {
+                    let delay = Duration::from_millis(500 * attempt as u64);
+                    thread::sleep(delay);
+                    continue;
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Provider '{}' failed (HTTP {})",
+                        provider.label,
+                        status_code,
+                    ));
+                }
+            }
+
+            #[derive(Deserialize)]
+            struct OpenAiTranscriptionResponse {
+                text: Option<String>,
+                transcription: Option<String>,
+            }
+
+            if let Ok(parsed) = serde_json::from_str::<OpenAiTranscriptionResponse>(&body_text) {
+                if let Some(t) = parsed.text.or(parsed.transcription) {
+                    return Ok(t);
+                }
+            }
+
+            if plain_text {
+                return Ok(body_text.trim().to_string());
+            }
+            return Err(anyhow::anyhow!("Provider returned no transcription text"));
+        }
+
+        Err(anyhow::anyhow!(
+            "Provider '{}' failed after {} attempts: {}",
+            provider.label,
+            max_retries,
+            last_error
+        ))
+    }
+
+    pub fn transcribe_cloud(
+        &self,
+        settings: &AppSettings,
+        audio: &[f32],
+    ) -> Result<(String, String)> {
+        let wav_bytes = Self::samples_to_wav_bytes(audio)?;
+        let language = if settings.selected_language != "auto"
+            && !settings.selected_language.trim().is_empty()
+        {
+            Some(settings.selected_language.trim().to_string())
+        } else {
+            None
+        };
+
+        if settings.cloud_transcribe_parallel {
+            let active_candidates: Vec<CloudTranscribeProvider> = settings
+                .cloud_transcribe_providers
+                .iter()
+                .filter(|p| {
+                    p.enabled && !p.base_url.trim().is_empty() && !p.api_key.trim().is_empty()
+                })
+                .cloned()
+                .collect();
+
+            if active_candidates.len() >= 2 {
+                info!(
+                    "Starting parallel cloud transcription race between {} providers: {:?}",
+                    active_candidates.len(),
+                    active_candidates
+                        .iter()
+                        .map(|p| &p.label)
+                        .collect::<Vec<_>>()
+                );
+
+                let (tx, rx) = mpsc::channel();
+                let num_candidates = active_candidates.len();
+
+                for provider in active_candidates {
+                    let tx = tx.clone();
+                    let wav_bytes = wav_bytes.clone();
+                    let lang = language.clone();
+                    thread::spawn(move || {
+                        let st = Instant::now();
+                        // In parallel race mode: 15s timeout with 1 retry
+                        let res = Self::transcribe_single_provider(
+                            &provider,
+                            lang.as_deref(),
+                            &wav_bytes,
+                            15,
+                            2,
+                        );
+                        let elapsed = st.elapsed();
+                        let _ = tx.send((provider.label, res, elapsed));
+                    });
+                }
+                drop(tx);
+
+                let mut errors = Vec::new();
+                let mut winner = None;
+
+                while let Ok((label, res, elapsed)) = rx.recv() {
+                    match res {
+                        Ok(text) if !text.trim().is_empty() => {
+                            let engine_label = format!("{} ({:.2}s)", label, elapsed.as_secs_f64());
+                            info!(
+                                "🏆 Cloud provider '{}' won the transcription race in {:.2}s!",
+                                label,
+                                elapsed.as_secs_f64()
+                            );
+                            winner = Some((text, engine_label));
+                            break;
+                        }
+                        Ok(_) => {
+                            warn!(
+                                "Cloud provider '{}' returned empty text in {:.2}s",
+                                label,
+                                elapsed.as_secs_f64()
+                            );
+                            errors.push(format!("{}: empty response", label));
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Cloud provider '{}' failed in {:.2}s: {}",
+                                label,
+                                elapsed.as_secs_f64(),
+                                e
+                            );
+                            errors.push(format!("{}: {}", label, e));
+                        }
+                    }
+                }
+
+                if let Some(res) = winner {
+                    return Ok(res);
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "All {} parallel cloud providers failed: {}",
+                        num_candidates,
+                        errors.join("; ")
+                    ));
+                }
+            } else if active_candidates.len() == 1 {
+                info!(
+                    "Only 1 enabled cloud provider configured; running in single mode ({})",
+                    active_candidates[0].label
+                );
+                let st = Instant::now();
+                let text = Self::transcribe_single_provider(
+                    &active_candidates[0],
+                    language.as_deref(),
+                    &wav_bytes,
+                    25,
+                    3,
+                )?;
+                let engine = format!(
+                    "{} ({:.2}s)",
+                    active_candidates[0].label,
+                    st.elapsed().as_secs_f64()
+                );
+                return Ok((text, engine));
+            }
+        }
+
+        // Single provider mode
+        let provider = settings
+            .cloud_transcribe_providers
+            .iter()
+            .find(|p| p.id == settings.cloud_transcribe_selected_provider_id)
+            .cloned()
+            .unwrap_or_else(|| CloudTranscribeProvider {
+                id: "custom".to_string(),
+                label: "Custom Cloud".to_string(),
+                base_url: settings.cloud_transcribe_base_url.clone(),
+                api_key: settings.cloud_transcribe_api_key.clone(),
+                model: settings.cloud_transcribe_model.clone(),
+                enabled: true,
+            });
+
+        let st = Instant::now();
+        let text =
+            Self::transcribe_single_provider(&provider, language.as_deref(), &wav_bytes, 25, 3)?;
+        let engine = format!("{} ({:.2}s)", provider.label, st.elapsed().as_secs_f64());
+        Ok((text, engine))
+    }
+
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
         Ok(self.complete(Instant::now(), audio, None)?.text)
     }
@@ -1012,9 +1353,53 @@ impl TranscriptionManager {
             return Ok(Transcription {
                 text: String::new(),
                 language: None,
+                engine: "Empty".into(),
             });
         }
 
+        let settings = get_settings(&self.app_handle);
+        let mut is_fallback = false;
+        if settings.cloud_transcribe_enabled {
+            let epoch = self.cloud_cancel_epoch.load(Ordering::Acquire);
+            let cloud_result = self.transcribe_cloud(&settings, &audio);
+            if epoch != self.cloud_cancel_epoch.load(Ordering::Acquire) {
+                return Err(EngineError::Cancelled.into());
+            }
+            match cloud_result {
+                Ok((text, engine)) => {
+                    let evidence = if settings.selected_language == "auto" {
+                        OutputLanguageEvidence::Unknown
+                    } else {
+                        OutputLanguageEvidence::UserSelected(settings.selected_language.clone())
+                    };
+                    return Ok(Transcription {
+                        text: post_process_transcription_text(
+                            text,
+                            &settings,
+                            false,
+                            &evidence,
+                            &[],
+                        ),
+                        language: None,
+                        engine,
+                    });
+                }
+                Err(error) => {
+                    warn!(
+                        "Cloud transcription failed; trying local fallback: {}",
+                        error
+                    );
+                    if !self.is_model_loaded() {
+                        if settings.selected_model.is_empty() {
+                            return Err(error);
+                        }
+                        self.initiate_model_load(false);
+                    }
+                    is_fallback = true;
+                }
+            }
+        }
+        let active_model = settings.selected_model.clone();
         let outcome = match live {
             Some(outcome) => outcome,
             None => self.decode_batch(audio)?,
@@ -1050,11 +1435,24 @@ impl TranscriptionManager {
             );
         }
 
+        let model_label = active_model
+            .split('/')
+            .last()
+            .unwrap_or(&active_model)
+            .trim_end_matches(".gguf");
+
+        let engine = if is_fallback {
+            format!("Local fallback: {} ({:.2}s)", model_label, elapsed_secs)
+        } else {
+            format!("Local: {} ({:.2}s)", model_label, elapsed_secs)
+        };
+
         self.maybe_unload_immediately("transcription");
 
         Ok(Transcription {
             text: final_result,
             language: Some(language),
+            engine,
         })
     }
 
@@ -1243,6 +1641,7 @@ struct BatchContext {
 /// A finished transcription.
 pub struct Transcription {
     pub text: String,
+    pub engine: String,
     /// The language it ran in and how that was chosen; `None` when there was
     /// no audio to run.
     pub language: Option<LanguageDecision>,

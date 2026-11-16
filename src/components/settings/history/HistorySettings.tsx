@@ -469,6 +469,11 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
       <div className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <p className="text-sm font-medium shrink-0">{formattedDate}</p>
+          {entry.transcription_engine && (
+            <span className="text-xs text-ink-3">
+              {entry.transcription_engine}
+            </span>
+          )}
           {entry.source_name && (
             <span
               className="flex items-center gap-1 min-w-0 text-sm text-ink-3"

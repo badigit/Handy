@@ -6,6 +6,7 @@ import type {
   AudioDevice,
   PostProcessApiFormat,
   ChineseScript,
+  CloudTranscribeProvider,
   TranscribeAcceleratorSetting,
   ShortcutActivation,
   VadBackend,
@@ -96,6 +97,22 @@ const settingUpdaters: {
     commands.changeAudioFeedbackVolumeSetting(value as number),
   sound_theme: (value) => commands.changeSoundThemeSetting(value as string),
   start_hidden: (value) => commands.changeStartHiddenSetting(value as boolean),
+  cloud_transcribe_enabled: (value) =>
+    commands.changeCloudTranscribeEnabledSetting(value as boolean),
+  cloud_transcribe_base_url: (value) =>
+    commands.changeCloudTranscribeBaseUrlSetting(value as string),
+  cloud_transcribe_api_key: (value) =>
+    commands.changeCloudTranscribeApiKeySetting(value as string),
+  cloud_transcribe_model: (value) =>
+    commands.changeCloudTranscribeModelSetting(value as string),
+  cloud_transcribe_parallel: (value) =>
+    commands.changeCloudTranscribeParallelSetting(value as boolean),
+  cloud_transcribe_selected_provider_id: (value) =>
+    commands.changeCloudTranscribeSelectedProviderSetting(value as string),
+  cloud_transcribe_providers: (value) =>
+    commands.saveCloudTranscribeProvidersSetting(
+      value as CloudTranscribeProvider[],
+    ),
   autostart_enabled: (value) =>
     commands.changeAutostartSetting(value as boolean),
   spoken_languages: (value) =>
@@ -164,6 +181,8 @@ const settingUpdaters: {
   history_limit: (value) => commands.updateHistoryLimit(value as number),
   post_process_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
+  post_process_always: (value) =>
+    commands.changePostProcessAlwaysSetting(value as boolean),
   post_process_selected_prompt_id: (value) =>
     commands.setPostProcessSelectedPrompt(value as string),
   mute_while_recording: (value) =>

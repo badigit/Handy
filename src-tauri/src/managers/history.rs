@@ -33,6 +33,7 @@ static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_requested BOOLEAN NOT NULL DEFAULT 0;"),
+    M::up("ALTER TABLE transcription_history ADD COLUMN transcription_engine TEXT;"),
 ];
 
 /// Nullable columns added outside [`MIGRATIONS`]; see
@@ -42,7 +43,7 @@ const ADDED_COLUMNS: &[&str] = &["source_name", "language", "language_source"];
 /// Every column a [`HistoryEntry`] is read from.
 const ENTRY_COLUMNS: &str = "id, file_name, timestamp, saved, title, transcription_text, \
     post_processed_text, post_process_prompt, post_process_requested, source_name, language, \
-    language_source";
+    language_source, transcription_engine";
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct PaginatedHistory {
@@ -65,6 +66,7 @@ pub enum HistoryUpdatePayload {
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct HistoryEntry {
+    pub transcription_engine: Option<String>,
     pub id: i64,
     pub file_name: String,
     pub timestamp: i64,
@@ -266,6 +268,7 @@ impl HistoryManager {
             post_processed_text: row.get("post_processed_text")?,
             post_process_prompt: row.get("post_process_prompt")?,
             post_process_requested: row.get("post_process_requested")?,
+            transcription_engine: row.get("transcription_engine")?,
             source_name: row.get("source_name")?,
             language: row.get("language")?,
             language_source: row
@@ -289,6 +292,7 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
         language: Option<LanguageDecision>,
+        transcription_engine: Option<String>,
     ) -> Result<HistoryEntry> {
         let (language, language_source) = split_language(language);
         let entry = self.insert_entry(HistoryEntry {
@@ -302,6 +306,7 @@ impl HistoryManager {
             post_process_prompt,
             post_process_requested,
             source_name: None,
+            transcription_engine,
             language,
             language_source,
         })?;
@@ -326,6 +331,7 @@ impl HistoryManager {
             post_process_prompt: None,
             post_process_requested: false,
             source_name: Some(source_name),
+            transcription_engine: None,
             language: None,
             language_source: None,
         })
@@ -348,8 +354,8 @@ impl HistoryManager {
                 post_process_requested,
                 source_name,
                 language,
-                language_source
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                language_source, transcription_engine
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![
                 &entry.file_name,
                 entry.timestamp,
@@ -362,6 +368,7 @@ impl HistoryManager {
                 &entry.source_name,
                 &entry.language,
                 entry.language_source.map(LanguageSource::as_str),
+                &entry.transcription_engine,
             ],
         )?;
         entry.id = conn.last_insert_rowid();
@@ -388,6 +395,7 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
         language: Option<LanguageDecision>,
+        transcription_engine: Option<String>,
     ) -> Result<HistoryEntry> {
         let (language, language_source) = split_language(language);
         let conn = self.get_connection()?;
@@ -397,14 +405,16 @@ impl HistoryManager {
                  post_processed_text = ?2,
                  post_process_prompt = ?3,
                  language = ?4,
-                 language_source = ?5
-             WHERE id = ?6",
+                 language_source = ?5,
+                 transcription_engine = ?6
+             WHERE id = ?7",
             params![
                 transcription_text,
                 post_processed_text,
                 post_process_prompt,
                 language,
                 language_source.map(LanguageSource::as_str),
+                transcription_engine,
                 id
             ],
         )?;
@@ -732,6 +742,32 @@ impl HistoryManager {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cloud_history_migration_preserves_language_and_engine() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        super::Migrations::new(super::MIGRATIONS[..4].to_vec())
+            .to_latest(&mut conn)
+            .unwrap();
+        conn.execute(
+            "ALTER TABLE transcription_history ADD COLUMN language TEXT",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO transcription_history (file_name, timestamp, title, transcription_text, language) VALUES ('test.wav', 1, 'Test', 'hello', 'en')", []).unwrap();
+        super::HistoryManager::apply_migrations(&mut conn).unwrap();
+        conn.execute(
+            "UPDATE transcription_history SET transcription_engine = 'Test cloud'",
+            [],
+        )
+        .unwrap();
+        super::HistoryManager::apply_migrations(&mut conn).unwrap();
+        let entry = super::HistoryManager::get_latest_entry_with_conn(&conn)
+            .unwrap()
+            .unwrap();
+        assert_eq!(entry.language.as_deref(), Some("en"));
+        assert_eq!(entry.transcription_engine.as_deref(), Some("Test cloud"));
+        assert_eq!(entry.transcription_text, "hello");
+    }
     use super::*;
     use rusqlite::{params, Connection};
 
@@ -767,8 +803,9 @@ mod tests {
                 transcription_text,
                 post_processed_text,
                 post_process_prompt,
-                post_process_requested
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                post_process_requested,
+                transcription_engine
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 format!("handy-{}.wav", timestamp),
                 timestamp,
@@ -778,6 +815,7 @@ mod tests {
                 post_processed,
                 Option::<String>::None,
                 false,
+                Option::<String>::None,
             ],
         )
         .expect("insert history entry");

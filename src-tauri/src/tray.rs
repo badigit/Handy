@@ -974,6 +974,7 @@ mod tests {
             source_name: None,
             language: None,
             language_source: None,
+            transcription_engine: None,
         }
     }
 

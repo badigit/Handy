@@ -315,7 +315,11 @@ impl TranscriptionJobManager {
             cancelled,
             percent: Cell::new(0),
         };
-        let Some(Transcription { text, language }) = tm.transcribe_in_chunks(samples, &control)?
+        let Some(Transcription {
+            text,
+            language,
+            engine,
+        }) = tm.transcribe_in_chunks(samples, &control)?
         else {
             return Ok(JobEnd::Cancelled);
         };
@@ -342,6 +346,7 @@ impl TranscriptionJobManager {
             processed.post_processed_text,
             processed.post_process_prompt,
             language,
+            Some(engine),
         )?;
         Ok(JobEnd::Finished {
             post_process_failed,

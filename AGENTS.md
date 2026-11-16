@@ -4,6 +4,8 @@ This file provides guidance to AI coding assistants working with code in this re
 
 ## Development Commands
 
+**Fork build policy:** Run native checks, tests, and Windows packaging only in GitHub Actions. Do not run local cargo builds/checks/tests/clippy or install Windows toolchains, CMake, or Vulkan SDK. Local frontend and formatting checks are allowed.
+
 **Prerequisites:**
 
 - [Rust](https://rustup.rs/) (latest stable)

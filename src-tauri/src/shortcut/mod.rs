@@ -22,9 +22,9 @@ use tauri::{AppHandle, Emitter, Manager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::APPLE_INTELLIGENCE_DEFAULT_MODEL_ID;
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ChineseScript, ClipboardHandling, KeyboardImplementation,
-    LLMPrompt, LanguageDetectionMode, OverlayPosition, OverlayStyle, PasteMethod,
-    ShortcutActivation, ShortcutBinding, SoundTheme, Theme, TypingTool, VadBackend,
+    self, get_settings, AutoSubmitKey, ChineseScript, ClipboardHandling, CloudTranscribeProvider,
+    KeyboardImplementation, LLMPrompt, LanguageDetectionMode, OverlayPosition, OverlayStyle,
+    PasteMethod, ShortcutActivation, ShortcutBinding, SoundTheme, Theme, TypingTool, VadBackend,
     APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
@@ -824,6 +824,188 @@ pub fn change_start_hidden_setting(app: AppHandle, enabled: bool) -> Result<(), 
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_cloud_transcribe_enabled_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_enabled = enabled;
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_enabled",
+            "value": enabled
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cloud_transcribe_base_url_setting(
+    app: AppHandle,
+    base_url: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_base_url = base_url.clone();
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_base_url",
+            "value": base_url
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cloud_transcribe_api_key_setting(
+    app: AppHandle,
+    api_key: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_api_key = api_key.clone();
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_api_key",
+            "value": api_key
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cloud_transcribe_model_setting(app: AppHandle, model: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_model = model.clone();
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_model",
+            "value": model
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cloud_transcribe_parallel_setting(
+    app: AppHandle,
+    parallel: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_parallel = parallel;
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_parallel",
+            "value": parallel
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_cloud_transcribe_selected_provider_setting(
+    app: AppHandle,
+    provider_id: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_selected_provider_id = provider_id.clone();
+
+    // Sync active provider fields with legacy fields for compatibility
+    if let Some(active) = settings
+        .cloud_transcribe_providers
+        .iter()
+        .find(|p| p.id == provider_id)
+    {
+        settings.cloud_transcribe_base_url = active.base_url.clone();
+        settings.cloud_transcribe_api_key = active.api_key.clone();
+        settings.cloud_transcribe_model = active.model.clone();
+    }
+
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_selected_provider_id",
+            "value": provider_id
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn save_cloud_transcribe_providers_setting(
+    app: AppHandle,
+    providers: Vec<CloudTranscribeProvider>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.cloud_transcribe_providers = providers.clone();
+
+    // Sync active provider fields with legacy fields
+    let selected_id = settings.cloud_transcribe_selected_provider_id.clone();
+    if let Some(active) = settings
+        .cloud_transcribe_providers
+        .iter()
+        .find(|p| p.id == selected_id)
+    {
+        settings.cloud_transcribe_base_url = active.base_url.clone();
+        settings.cloud_transcribe_api_key = active.api_key.clone();
+        settings.cloud_transcribe_model = active.model.clone();
+    }
+
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "cloud_transcribe_providers",
+            "value": providers
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn test_cloud_transcribe_provider(provider: CloudTranscribeProvider) -> Result<String, String> {
+    let st = std::time::Instant::now();
+    match crate::managers::transcription::TranscriptionManager::test_cloud_provider(&provider) {
+        Ok(_) => {
+            let elapsed = st.elapsed();
+            Ok(format!("Connected in {:.2}s!", elapsed.as_secs_f64()))
+        }
+        Err(e) => Err(format!("{}", e)),
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_autostart_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.autostart_enabled = enabled;
@@ -1126,6 +1308,15 @@ pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Res
     }
 
     crate::secure_input::reconcile_fallback(&app);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_post_process_always_setting(app: AppHandle, always: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.post_process_always = always;
+    settings::write_settings(&app, settings);
     Ok(())
 }
 
