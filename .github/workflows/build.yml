@@ -454,6 +454,10 @@ jobs:
           $env:PATH = "$PWD/src-tauri/transcribe-libs;$env:PATH"
           cargo test --manifest-path src-tauri/Cargo.toml --release --lib cloud_ -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --release --lib managers::history::tests -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path src-tauri/Cargo.toml --release --lib debug_output_redacts_api_keys -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --manifest-path src-tauri/Cargo.toml --release --lib
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

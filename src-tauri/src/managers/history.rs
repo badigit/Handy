@@ -786,7 +786,8 @@ mod tests {
                 post_process_requested BOOLEAN NOT NULL DEFAULT 0,
                 source_name TEXT,
                 language TEXT,
-                language_source TEXT
+                language_source TEXT,
+                transcription_engine TEXT
             );",
         )
         .expect("create transcription_history table");
