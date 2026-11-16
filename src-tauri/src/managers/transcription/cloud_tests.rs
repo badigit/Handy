@@ -124,3 +124,31 @@ fn cloud_http_accepts_plain_text_response() {
     assert_eq!(text, "hello");
     worker.join().unwrap();
 }
+
+#[test]
+fn cloud_race_uses_success_after_another_provider_fails() {
+    let (bad_url, bad_worker) = serve(vec![(401, "application/json", "unauthorized")]);
+    let (good_url, good_worker) = serve(vec![(200, "application/json", r#"{"text":"winner"}"#)]);
+    let mut settings = crate::settings::get_default_settings();
+    settings.cloud_transcribe_parallel = true;
+    settings.selected_language = "en".into();
+    let mut good = provider(good_url);
+    good.id = "winner".into();
+    good.label = "Winner".into();
+    settings.cloud_transcribe_providers = vec![provider(bad_url), good];
+    let (text, engine) = TranscriptionManager::transcribe_cloud(&settings, &[0.0; 160]).unwrap();
+    assert_eq!(text, "winner");
+    assert!(engine.starts_with("Winner ("));
+    bad_worker.join().unwrap();
+    good_worker.join().unwrap();
+}
+
+#[test]
+fn cloud_race_with_no_enabled_providers_fails_without_a_request() {
+    let mut settings = crate::settings::get_default_settings();
+    settings.cloud_transcribe_parallel = true;
+    for p in &mut settings.cloud_transcribe_providers {
+        p.enabled = false;
+    }
+    assert!(TranscriptionManager::transcribe_cloud(&settings, &[0.0; 160]).is_err());
+}

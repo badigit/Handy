@@ -249,7 +249,7 @@ pub struct TranscriptionManager {
     /// The transcribe-cpp engine: owns the worker process, its model, and
     /// recovery from crashes and hangs.
     engine: EngineSupervisor,
-    cloud_cancel_epoch: AtomicU64,
+    cloud_cancel_epoch: Arc<AtomicU64>,
     model_manager: Arc<ModelManager>,
     app_handle: AppHandle,
     current_model_id: Arc<Mutex<Option<String>>>,
@@ -288,7 +288,7 @@ impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
         let manager = Self {
             engine: EngineSupervisor::new(!transcribe_gpu_disabled_for_host()),
-            cloud_cancel_epoch: AtomicU64::new(0),
+            cloud_cancel_epoch: Arc::new(AtomicU64::new(0)),
             model_manager,
             app_handle: app_handle.clone(),
             current_model_id: Arc::new(Mutex::new(None)),
@@ -1173,11 +1173,7 @@ impl TranscriptionManager {
         ))
     }
 
-    pub fn transcribe_cloud(
-        &self,
-        settings: &AppSettings,
-        audio: &[f32],
-    ) -> Result<(String, String)> {
+    pub fn transcribe_cloud(settings: &AppSettings, audio: &[f32]) -> Result<(String, String)> {
         let wav_bytes = Self::samples_to_wav_bytes(audio)?;
         let language = if settings.selected_language != "auto"
             && !settings.selected_language.trim().is_empty()
@@ -1294,6 +1290,7 @@ impl TranscriptionManager {
                 );
                 return Ok((text, engine));
             }
+            return Err(anyhow::anyhow!("No enabled cloud providers are configured"));
         }
 
         // Single provider mode
@@ -1361,7 +1358,7 @@ impl TranscriptionManager {
         let mut is_fallback = false;
         if settings.cloud_transcribe_enabled {
             let epoch = self.cloud_cancel_epoch.load(Ordering::Acquire);
-            let cloud_result = self.transcribe_cloud(&settings, &audio);
+            let cloud_result = Self::transcribe_cloud(&settings, &audio);
             if epoch != self.cloud_cancel_epoch.load(Ordering::Acquire) {
                 return Err(EngineError::Cancelled.into());
             }
@@ -1380,7 +1377,12 @@ impl TranscriptionManager {
                             &evidence,
                             &[],
                         ),
-                        language: None,
+                        language: (settings.selected_language != "auto"
+                            && !settings.selected_language.trim().is_empty())
+                        .then(|| LanguageDecision {
+                            language: Some(settings.selected_language.clone()),
+                            source: LanguageSource::Selected,
+                        }),
                         engine,
                     });
                 }
